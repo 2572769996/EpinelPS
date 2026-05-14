@@ -1,0 +1,71 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Install .NET 10
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Restore
+        run: dotnet restore
+
+      # 发布 ServerSelector.Desktop — 单文件 exe
+      - name: Publish ServerSelector
+        run: >
+          dotnet publish ServerSelector.Desktop
+          -c Release
+          -p:DebugType=none
+          -p:DebugSymbols=false
+          -p:IncludeNativeLibrariesForSelfExtract=true
+
+      # 发布 EpinelPS — 单文件 exe
+      - name: Publish EpinelPS
+        run: >
+          dotnet publish EpinelPS
+          -c Release
+          -p:DebugType=none
+          -p:DebugSymbols=false
+          -p:IncludeNativeLibrariesForSelfExtract=true
+
+      # 组装最终输出目录：只留必要文件
+      - name: Assemble release
+        run: |
+          mkdir release
+          copy ServerSelector.Desktop\bin\Release\net10.0\win-x64\publish\ServerSelector.Desktop.exe release\
+          copy ServerSelector.Desktop\sodium.dll release\
+          copy EpinelPS\bin\Release\net10.0\win-x64\publish\EpinelPS.exe release\
+          copy EpinelPS\gameconfig.json release\
+          copy EpinelPS\gameversion.json release\
+          xcopy /s /e /i "EpinelPS\wwwroot" "release\wwwroot"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: EpinelPS
+          path: release/
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: release/*
