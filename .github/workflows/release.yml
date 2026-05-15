@@ -49,6 +49,8 @@ jobs:
 
       - name: Generate SSL certificates
         shell: bash
+        env:
+          MSYS_NO_PATHCONV: 1
         run: |
           # 生成 CA 根证书（无密码，CI 环境不需要）
           openssl genrsa -out myCA.key 2048
