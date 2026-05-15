@@ -25,17 +25,13 @@ jobs:
         id: resolve
         run: |
           if [ "${{ github.event_name }}" = "push" ]; then
-            # tag 推送：直接用 git tag
             TAG="${GITHUB_REF#refs/tags/}"
           elif [ -n "${{ github.event.inputs.tag }}" ]; then
-            # 手动触发 + 用户填了 tag
             TAG="${{ github.event.inputs.tag }}"
-            # 自动补 v 前缀
             if [[ ! "$TAG" =~ ^v ]]; then
               TAG="v${TAG}"
             fi
           else
-            # 手动触发 + 没填 tag：自动生成
             TAG="v$(date +%Y%m%d-%H%M%S)"
           fi
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
@@ -47,44 +43,92 @@ jobs:
     runs-on: windows-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Install .NET 10
+      - name: Generate SSL certificates
+        shell: bash
+        run: |
+          # 生成 CA 根证书（无密码，CI 环境不需要）
+          openssl genrsa -out myCA.key 2048
+          openssl req -x509 -new -nodes -key myCA.key -sha256 -days 825 \
+            -out myCA.pem -subj "/CN=EpinelPS CA"
+
+          # 生成站点证书
+          NAME=nikkedomains
+          openssl genrsa -out $NAME.key 2048
+          openssl req -new -key $NAME.key -out $NAME.csr \
+            -subj "/CN=*.nikke-kr.com"
+
+          cat > $NAME.ext << EXTEOF
+          authorityKeyIdentifier=keyid,issuer
+          basicConstraints=CA:FALSE
+          keyUsage = digitalSignature, nonRepudiation, keyEncipherment, dataEncipherment
+          subjectAltName = @alt_names
+          [alt_names]
+          DNS.1 = *.nikke-kr.com
+          DNS.2 = aws-na-dr.intlgame.com
+          DNS.3 = *.intlgame.com
+          DNS.4 = *.playerinfinite.com
+          EXTEOF
+
+          openssl x509 -req -in $NAME.csr -CA myCA.pem -CAkey myCA.key \
+            -CAcreateserial -out $NAME.crt -days 825 -sha256 -extfile $NAME.ext
+
+          # 生成 pfx 文件
+          openssl pkcs12 -export -out myCA.pfx -inkey myCA.key -in myCA.pem -passout pass:
+          openssl pkcs12 -export -out site.pfx -inkey $NAME.key -in $NAME.crt -passout pass:
+
+          # 复制到 ServerSelector 项目目录
+          cp myCA.pem ServerSelector/myCA.pem
+          cp myCA.pfx ServerSelector/myCA.pfx
+          cp site.pfx ServerSelector/site.pfx
+
+          # 复制到 EpinelPS 项目目录
+          cp site.pfx EpinelPS/site.pfx
+
+          echo "✅ SSL certificates generated"
+
+      - name: Install .NET
         uses: actions/setup-dotnet@v5
         with:
           dotnet-version: 10.0.x
-
-      - name: Setup MSBuild
-        uses: microsoft/setup-msbuild@v2
 
       - name: Restore
         run: dotnet restore
 
       - name: Publish ServerSelector
+        shell: cmd
         run: >
           dotnet publish ServerSelector.Desktop
           -c Release
           -p:DebugType=none
           -p:DebugSymbols=false
+          -p:PublishSingleFile=false
 
       - name: Publish EpinelPS
+        shell: cmd
         run: >
           dotnet publish EpinelPS
           -c Release
           -p:DebugType=none
           -p:DebugSymbols=false
+          -p:PublishSingleFile=false
 
       - name: Assemble release
+        shell: cmd
         run: |
           mkdir release
           copy ServerSelector.Desktop\bin\Release\net10.0\win-x64\publish\ServerSelector.Desktop.exe release\
-          copy ServerSelector.Desktop\sodium.dll release\
+          copy ServerSelector.Desktop\bin\Release\net10.0\win-x64\publish\sodium.dll release\
+          copy ServerSelector.Desktop\bin\Release\net10.0\win-x64\publish\myCA.pem release\
+          copy ServerSelector.Desktop\bin\Release\net10.0\win-x64\publish\myCA.pfx release\
+          copy ServerSelector.Desktop\bin\Release\net10.0\win-x64\publish\site.pfx release\
           copy EpinelPS\bin\Release\net10.0\win-x64\publish\EpinelPS.exe release\
-          copy EpinelPS\gameconfig.json release\
-          copy EpinelPS\gameversion.json release\
-          xcopy /s /e /i "EpinelPS\wwwroot" "release\wwwroot"
+          copy EpinelPS\bin\Release\net10.0\win-x64\publish\gameconfig.json release\
+          copy EpinelPS\bin\Release\net10.0\win-x64\publish\gameversion.json release\
+          xcopy /s /e /i "EpinelPS\bin\Release\net10.0\win-x64\publish\wwwroot" "release\wwwroot"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
