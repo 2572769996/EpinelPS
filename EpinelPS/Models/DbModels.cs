@@ -1,5 +1,6 @@
 using EpinelPS.Data;
 using Google.Protobuf;
+using Google.Protobuf.WellKnownTypes;
 
 namespace EpinelPS.Models;
 
@@ -157,9 +158,9 @@ public class OverclockData
     public bool WasInfinitePopupChecked { get; set; } = false;
     public bool WasMainSeasonResetPopupChecked { get; set; } = true;
     public bool WasSubSeasonResetPopupChecked { get; set; } = true;
-    public OverclockHighScoreData CurrentSeasonHighScore { get; set; }
-    public OverclockHighScoreData CurrentSubSeasonHighScore { get; set; }
-    public OverclockHighScoreData LatestOption { get; set; }
+    public OverclockHighScoreData CurrentSeasonHighScore { get; set; } = new();
+    public OverclockHighScoreData CurrentSubSeasonHighScore { get; set; } = new();
+    public OverclockHighScoreData LatestOption { get; set; } = new();
 }
 public class OverclockHighScoreData
 {
@@ -223,7 +224,7 @@ public class ResetableData
     public List<int> CompletedDailyMissions { get; set; } = [];
     public int DailyMissionPoints { get; set; }
     public SimRoomData SimRoomData { get; set; } = new();
-
+    public Dictionary<int, int> TowerCount { get; set; } = [];
     public Dictionary<int, int> DailyCounselCount { get; set; } = [];
 
 }
@@ -358,7 +359,7 @@ public class LostSectorData
     public Dictionary<string, int> ClearedStages { get; set; } = [];
     public List<NetLostSectorTeamPosition> TeamPositions { get; set; } = [];
     public int ObtainedRewards { get; set; } = 0;
-    public bool RecievedFinalReward { get; set; }
+    public bool ReceivedFinalReward { get; set; }
     public bool CompletedPerfectly { get; set; }
 }
 
@@ -500,4 +501,109 @@ public class MiniGameStoryChoice
     public List<string> Choices { get; set; } = [];
     public List<string> SeenChoices { get; set; } = [];
     public string LastSeen { get; set; }
+}
+
+
+public class MiniGameScenarios
+{
+    public int ArcadeId { get; set; }
+    public List<string> CompletedScenarios { get; set; } = [];
+
+}
+
+public class DispatchData
+{
+    public int Today { get; set; }
+    public List<NetUserDispatchData> dispatchDatas { get; set; }
+}
+
+
+
+public class GuildData
+{
+    public int? guildId { get; set; }
+    public long? LeaveAt { get; set; }
+       
+}
+
+
+
+
+public class TtsDatas
+{
+    public Dictionary<MiniGameTtsDifficulty,Dictionary<int, NetMiniGameTtsBadgeData>> BadgeData { get; set; } = [];
+    public Dictionary<int,NetMiniGameTtsMissionData> MissionData { get; set; } =[];
+    public List<NetMiniGameTtsScoreData> ScoreData { get; set; } = [];
+    public List<NetMiniGameTtsSongPlayCount> SongPlayCount { get; set; } = [];
+    public List<NetMiniGameTtsSongPlayData> SongPlayData { get; set; } = [];
+
+
+    public List<int> MissionCompleteList { get; set; } = [];
+
+    public bool IsFinishTutorial { get; set; } = false;
+
+    public MiniGameTtsDifficulty LastDifficulty = MiniGameTtsDifficulty.Normal;
+
+    /// <summary>
+    /// 徽章歌曲ID
+    /// </summary>
+    public List<int> BadgeSongId { get; set; } = [];
+
+    /// <summary>
+    /// 解锁歌曲ID
+    /// </summary>
+    public List<int> UnlockSongId { get; set; } = [];
+
+    public int AllPlayCount { get; set; } = 0;
+
+    public long TotalScore { get; set; } = 0;
+
+    /// <summary>
+    /// 购买的AlbumIds
+    /// </summary>
+    public List<int> PurchasedAlbumIds { get; set; } = [];
+
+    public Duration TotalPlayTime { get; set; } = new();
+
+    public Timestamp NewProductPopUp { get; set; } = new();
+
+    public Timestamp DateFromShop { get; set; } = new();
+}
+
+
+
+public class SongRankKey
+{
+    public int SongId { get; set; }
+    public MiniGameTtsRankingType RankType { get; set; }   // Server, Friend, Guild
+    
+}
+
+
+public class SongRankData
+{
+    
+    public long UserId { get; set; }               // 用户ID（新增）
+    public int SongId { get; set; }
+    public MiniGameTtsRankingType RankType { get; set; }
+    public MiniGameTtsDifficulty Difficulty { get; set; }
+    public int Score { get; set; }
+    public long UpdateTime { get; set; }  // Unix timestamp
+    public int IsDeleted { get; set; }
+}
+
+public class MiniGameTtsTotalRankRecord
+{    
+    public long UserId { get; set; }
+    public long Score { get; set; }
+    public MiniGameTtsRankingType RankType { get; set; }
+    public long UpdatedAt { get; set; }
+}
+
+public class SqlSongRankKey
+{
+    public int UserId { get; set; }               // 用户ID（新增）
+    public int SongId { get; set; }
+    public MiniGameTtsRankingType RankType { get; set; }
+    public MiniGameTtsDifficulty Difficulty { get; set; }
 }
