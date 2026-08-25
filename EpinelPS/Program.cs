@@ -1,13 +1,16 @@
-﻿using EpinelPS.Data;
+using EpinelPS.Data;
 using EpinelPS.Database;
+using EpinelPS.Interfaces;
 using EpinelPS.LobbyServer;
 using EpinelPS.Networking;
+using EpinelPS.Services;
 using EpinelPS.Utils;
 using log4net.Config;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.AspNetCore.Server.Kestrel.Https;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using System.Net;
-using System.Net.Http.Headers;
 using System.Reflection;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
@@ -24,8 +27,21 @@ internal class Program
             Console.WriteLine($"EpinelPS v{Assembly.GetExecutingAssembly().GetName().Version} - https://github.com/EpinelPS/EpinelPS/");
             Console.WriteLine("This software is licensed under the AGPL-3.0 License");
             Console.WriteLine("Targeting game version " + GameConfig.Root.TargetVersion);
+            Console.WriteLine("Git commit " + GitUpdateCheck.GitCommit);
+            
+            if (args.Length == 0 || args[0] != "--headless")
+                await GitUpdateCheck.CheckForUpdates();
 
             await GameData.CreateAsync();
+
+            try
+            {
+                await LocaleDataDownloader.DownloadAsync(CancellationToken.None);
+            }
+            catch (Exception ex)
+            {
+                Logging.WriteLine($"Failed to update locale data: {ex.Message}", LogType.Warning);
+            }
 
             Console.WriteLine("Initializing database");
             JsonDb.Save();
@@ -33,86 +49,108 @@ internal class Program
             Logging.WriteLine("Register handlers");
             LobbyHandler.Init();
 
-            Logging.WriteLine("Starting ASP.NET core on port 443");
-            new Thread(() =>
+            Logging.WriteLine("Starting ASP.NET core on ports 80 and 443");
+            WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
+
+            // Configure HTTPS
+            HttpsConnectionAdapterOptions httpsConnectionAdapterOptions = new()
             {
-                WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
+                SslProtocols = System.Security.Authentication.SslProtocols.Tls12,
+                ClientCertificateMode = ClientCertificateMode.AllowCertificate,
+                ServerCertificate = new X509Certificate2(File.ReadAllBytes(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "site.pfx")))
+            };
 
-                // Configure HTTPS
-                HttpsConnectionAdapterOptions httpsConnectionAdapterOptions = new()
+            builder.WebHost.ConfigureKestrel(serverOptions =>
+            {
+                serverOptions.Listen(IPAddress.Any, 443,
+                    listenOptions =>
+                    {
+                        listenOptions.Protocols = HttpProtocols.Http1AndHttp2AndHttp3;
+                        listenOptions.UseHttps(AppDomain.CurrentDomain.BaseDirectory + @"site.pfx", "");
+                    });
+                serverOptions.Listen(IPAddress.Loopback, 80,
+               listenOptions =>
+               {
+                   listenOptions.Protocols = HttpProtocols.Http1;
+               });
+                // TODO
+                serverOptions.AllowSynchronousIO = true;
+            });
+
+
+            // Add services to the container.
+            string connectionString = builder.Configuration.GetConnectionString("EpinelPSConnection").Replace("(startupDirectory)", AppDomain.CurrentDomain.BaseDirectory);
+            string connectionType = builder.Configuration.GetConnectionString("EpinelPSConnectionType").ToLower();
+            builder.Services.AddHttpContextAccessor();
+            builder.Services.AddScoped<IUserService, UserService>();
+            builder.Services.AddDbContext<GameContext>(options =>
+            {
+                switch (connectionType?.ToLowerInvariant())
                 {
-                    SslProtocols = System.Security.Authentication.SslProtocols.Tls12,
-                    ClientCertificateMode = ClientCertificateMode.AllowCertificate,
-                    ServerCertificate = new X509Certificate2(File.ReadAllBytes(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "site.pfx")))
-                };
+                    case "sql":
+                        options.UseSqlServer(connectionString);
+                        break;
 
-                builder.WebHost.ConfigureKestrel(serverOptions =>
-                {
-                    serverOptions.Listen(IPAddress.Any, 443,
-                        listenOptions =>
-                        {
-                            listenOptions.Protocols = HttpProtocols.Http1AndHttp2AndHttp3;
-                            listenOptions.UseHttps(AppDomain.CurrentDomain.BaseDirectory + @"site.pfx", "");
-                        });
-                    serverOptions.Listen(IPAddress.Loopback, 80,
-                   listenOptions =>
-                   {
-                       listenOptions.Protocols = HttpProtocols.Http1;
-                   });
-                    // TODO
-                    serverOptions.AllowSynchronousIO = true;
-                });
+                    case "mysql":
+                        options.UseMySQL(connectionString);
+                        break;
 
+                    case "npgsql":
+                        options.UseNpgsql(connectionString);
+                        break;
 
-                // Add services to the container.
+                    default:
+                        options.UseSqlite(connectionString);
+                        break;
+                }
+            });
+            builder.Services.AddControllersWithViews(options =>
+            {
+                options.AllowEmptyInputInBodyModelBinding = true;
+                options.OutputFormatters.Insert(0, new ProtobufOutputFormatter());
+            });
+            // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
+            builder.Services.AddEndpointsApiExplorer();
+            builder.Services.AddRouting();
+            builder.Services.AddHttpClient();
 
-                builder.Services.AddControllersWithViews(options =>
-                {
-                    options.AllowEmptyInputInBodyModelBinding = true;
-                    options.OutputFormatters.Insert(0, new ProtobufOutputFormatter());
-                });
-                // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
-                builder.Services.AddEndpointsApiExplorer();
-                builder.Services.AddRouting();
-                builder.Services.AddHttpClient();
-
-                builder.Logging.ClearProviders();
-                builder.Logging.AddColorConsoleLogger(configuration =>
-                {
-                    // Replace warning value from appsettings.json of "Cyan"
-                    configuration.LogLevelToColorMap[LogLevel.Warning] = ConsoleColor.Yellow;
-                    // Replace warning value from appsettings.json of "Red"
-                    configuration.LogLevelToColorMap[LogLevel.Error] = ConsoleColor.DarkRed;
-                });
+            builder.Logging.ClearProviders();
+            builder.Logging.AddColorConsoleLogger(configuration =>
+            {
+                // Replace warning value from appsettings.json of "Cyan"
+                configuration.LogLevelToColorMap[LogLevel.Warning] = ConsoleColor.Yellow;
+                // Replace warning value from appsettings.json of "Red"
+                configuration.LogLevelToColorMap[LogLevel.Error] = ConsoleColor.DarkRed;
+            });
 
 
-                WebApplication app = builder.Build();
+            WebApplication app = builder.Build();
+            CreateDbIfNotExists(app);
+            app.UseDefaultFiles();
+            app.UseStaticFiles();
+            app.UseMiddleware<EncryptionMiddleware>();
 
-                app.UseDefaultFiles();
-                app.UseStaticFiles();
-                app.UseMiddleware<EncryptionMiddleware>();
-                
 
-               // app.UseHttpsRedirection();
+            // app.UseHttpsRedirection();
 
-                app.UseAuthorization();
-                //app.UseHttpsRedirection();
-                app.UseRouting();
-                app.MapControllerRoute(
-           name: "default",
-           pattern: "/admin/{controller=Admin}/{action=Dashboard}/{id?}");
+            app.UseAuthorization();
+            //app.UseHttpsRedirection();
+            app.UseRouting();
+            app.MapControllerRoute(
+       name: "default",
+       pattern: "/admin/{controller=Admin}/{action=Dashboard}/{id?}");
 
-                app.MapControllers();
+            app.MapControllers();
 
-                app.MapGet("/prdenv/{**all}", AssetDownloadUtil.HandleReq);
-                app.MapGet("/PC/{**all}", AssetDownloadUtil.HandleReq);
-                app.MapGet("/media/{**all}", AssetDownloadUtil.HandleReq);
-                app.MapPost("/rqd/sync", HandleRqd);
+            app.MapGet("/prdenv/{**all}", AssetDownloadUtil.HandleReq);
+            app.MapGet("/PC/{**all}", AssetDownloadUtil.HandleReq);
+            app.MapGet("/media/{**all}", AssetDownloadUtil.HandleReq);
+            app.MapPost("/rqd/sync", HandleRqd);
 
-                // NOTE: pub prefixes shows public (production server), local is local server (does not have any effect), dev is development server, etc.
-                // It does not have any effect, except for the publisher server, which adds a watermark?
+            // NOTE: pub prefixes shows public (production server), local is local server (does not have any effect), dev is development server, etc.
+            // It does not have any effect, except for the publisher server, which adds a watermark?
 
-                app.MapGet("/route/{**all}", () => @"{
+            app.MapGet("/route/{**all}", () => @"{
           ""Config"": [
             {
               ""VersionRange"": {
@@ -177,17 +215,15 @@ internal class Program
           ]
         }".Replace("{GameMinVer}", GameConfig.Root.GameMinVer).Replace("{GameMaxVer}", GameConfig.Root.GameMaxVer));
 
-                app.MapGet("/", () =>
-                {
-                    return $"EpinelPS v{Assembly.GetExecutingAssembly().GetName().Version} - https://github.com/EpinelPS/EpinelPS/";
-                });
+            app.MapGet("/", () =>
+            {
+                return $"EpinelPS v{Assembly.GetExecutingAssembly().GetName().Version} - https://github.com/EpinelPS/EpinelPS/";
+            });
 
-                app.Run();
-            }).Start();
-
-            CliLoop();
+            new Thread(Commands.Services.CliLoop.Start).Start();
+            app.Run();
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not HostAbortedException && ex.Source != "Microsoft.EntityFrameworkCore.Design") // see https://github.com/dotnet/efcore/issues/29923
         {
             Console.WriteLine("Fatal error:");
             Console.WriteLine(ex.ToString());
@@ -196,492 +232,34 @@ internal class Program
         }
     }
 
+    private static void CreateDbIfNotExists(IHost host)
+    {
+        using (var scope = host.Services.CreateScope())
+        {
+            var services = scope.ServiceProvider;
+            try
+            {
+                var context = services.GetRequiredService<GameContext>();
+                DbInitializer.Initialize(context);
+            }
+            catch (Exception ex)
+            {
+                var logger = services.GetRequiredService<ILogger<Program>>();
+                logger.LogError(ex, "An error occurred creating the DB.");
+            }
+        }
+    }
+
     private static void HandleRqd(HttpContext context)
     {
 
     }
 
-    private static void CliLoop()
-    {
-        ulong selectedUser = 0;
-        string prompt = "# ";
-        while (true)
-        {
-            Console.Write(prompt);
-
-            string? input = Console.ReadLine();
-            if (input == null) break;
-            string[] args = input.Split(' ');
-            if (string.IsNullOrEmpty(input) || string.IsNullOrWhiteSpace(input))
-            {
-
-            }
-            else if (input == "?" || input == "help")
-            {
-                Console.WriteLine("EpinelPS CLI");
-                Console.WriteLine("NOTICE: Admin panel is available at https://localhost/admin/");
-                Console.WriteLine();
-                Console.WriteLine("Commands:");
-                Console.WriteLine("  help - show this help");
-                Console.WriteLine("  show users - show all users");
-                Console.WriteLine("  user (user id) - select user by id");
-                Console.WriteLine("  rmuser - delete selected user");
-                Console.WriteLine("  r - load changes to database from disk. Discards data in memory.");
-                Console.WriteLine("  exit - exit server application");
-                Console.WriteLine("  completestage (chapter num)-(stage number) - complete selected stage and get rewards (and all previous ones). Example completestage 15-1. Note that the exact stage number cleared may not be exact.");
-                Console.WriteLine("  sickpulls (requires selecting user first) allows for all characters to have equal chances of getting pulled");
-                Console.WriteLine("  SetLevel (level) - Set all characters' level (between 1 and 999 takes effect on game and server restart)");
-                Console.WriteLine("  SetSkillLevel (level) - Set all characters' skill levels between 1 and 10 (takes effect on game and server restart)");
-                Console.WriteLine("  addallcharacters - Add all missing characters to the selected user with default levels and skills (takes effect on game and server restart)");
-                Console.WriteLine("  addallmaterials (amount) - Add all materials to the selected user with default levels and skills (takes effect on game and server restart)");
-                Console.WriteLine("  finishalltutorials - finish all tutorials for the selected user (takes effect on game and server restart)");
-                Console.WriteLine("  SetCoreLevel (core level / 0-3 sets stars) - Set all characters' grades based on the input (from 0 to 11)");
-                Console.WriteLine("  AddItem (id) (amount) - Adds an item to the selected user (takes effect on game and server restart)");
-                Console.WriteLine("  AddCharacter (id) - Adds a character to the selected user (takes effect on game and server restart)");
-                Console.WriteLine("  addallEq (FavoriteItemAmount) (ConsumableAmount) (T9-EquipmentAmount) -All parameters default to 1. When they are marked as \"~\", they are set to 0.Adds all FavoriteItem and Consumables and T9-Equipment");
-            }
-            else if (input == "show users")
-            {
-                Console.WriteLine("Id,Username,Nickname");
-                foreach (User item in JsonDb.Instance.Users)
-                {
-                    Console.WriteLine($"{item.ID},{item.Username},{item.Nickname}");
-                }
-            }
-            else if (input.StartsWith("user"))
-            {
-                if (args.Length == 2)
-                {
-                    if (ulong.TryParse(args[1], out ulong id))
-                    {
-                        // check if user id exists
-                        User? user = JsonDb.Instance.Users.FirstOrDefault(x => x.ID == id);
-                        if (user != null)
-                        {
-                            selectedUser = user.ID;
-                            Console.WriteLine("Selected user: " + user.Username);
-                            prompt = "/users/" + user.Username + "# ";
-                        }
-                        else
-                        {
-                            Console.WriteLine("User not found");
-                        }
-                    }
-                    else
-                    {
-                        Console.WriteLine("Argument #1 should be a number");
-                        Console.WriteLine("Usage: chroot (user id)");
-                    }
-                }
-                else
-                {
-                    Console.WriteLine("Incorrect number of arguments for chroot");
-                    Console.WriteLine("Usage: chroot (user id)");
-                }
-            }
-            else if (input == "addallcharacters")
-            {
-                if (selectedUser == 0)
-                {
-                    Console.WriteLine("No user selected");
-                }
-                else
-                {
-                    User? user = JsonDb.Instance.Users.FirstOrDefault(x => x.ID == selectedUser);
-                    if (user == null)
-                    {
-                        Console.WriteLine("Selected user does not exist");
-                        selectedUser = 0;
-                        prompt = "# ";
-                    }
-                    else
-                    {
-                        Models.Admin.RunCmdResponse rsp = AdminCommands.AddAllCharacters(user);
-                        if (!rsp.ok) Console.WriteLine(rsp.error);
-                    }
-                }
-            }
-            else if (input.StartsWith("addallmaterials"))
-            {
-                if (selectedUser == 0)
-                {
-                    Console.WriteLine("No user selected");
-                }
-                else
-                {
-                    User? user = JsonDb.Instance.Users.FirstOrDefault(x => x.ID == selectedUser);
-                    if (user == null)
-                    {
-                        Console.WriteLine("Selected user does not exist");
-                        selectedUser = 0;
-                        prompt = "# ";
-                    }
-                    else
-                    {
-                        int amount = 1; // Default amount if not provided
-                        if (args.Length >= 2 && int.TryParse(args[1], out int parsedAmount))
-                        {
-                            amount = parsedAmount;
-                        }
-
-                        Models.Admin.RunCmdResponse rsp = AdminCommands.AddAllMaterials(user, amount);
-                        if (!rsp.ok) Console.WriteLine(rsp.error);
-                    }
-                }
-            }
-            else if (input.StartsWith("addallEq"))
-            {
-                if (selectedUser == 0)
-                {
-                    Console.WriteLine("No user selected");
-                }
-                else
-                {
-                    User? user = JsonDb.Instance.Users.FirstOrDefault(x => x.ID == selectedUser);
-                    if (user == null)
-                    {
-                        Console.WriteLine("Selected user does not exist");
-                        selectedUser = 0;
-                        prompt = "# ";
-                    }
-                    else
-                    {
-                        int amount1 = 1; // Default amount if not provided
-                        int amount2 = 1;
-                        int amount3 = 1;
-                        var inputs = args.Skip(1).Where(a => !string.IsNullOrWhiteSpace(a)).Take(3).ToArray();
-                        if (inputs.Length >= 1)
-                        {
-                            if (inputs[0] == "~")
-                                amount1 = 0;
-                            else if (int.TryParse(inputs[0], out int val1))
-                                amount1 = val1;
-                            else
-                            {
-                                Console.WriteLine($"Invalid number: {inputs[0]}");
-                                return;
-                            }
-                        }
-
-                        if (inputs.Length >= 2)
-                        {
-                            if (inputs[1] == "~")
-                                amount2 = 0;
-                            else if (int.TryParse(inputs[1], out int val2))
-                                amount2 = val2;
-                            else
-                            {
-                                Console.WriteLine($"Invalid number: {inputs[1]}");
-                                return;
-                            }
-                        }
-
-                        if (inputs.Length >= 3)
-                        {
-                            if (inputs[2] == "~")
-                                amount3 = 0;
-                            else if (int.TryParse(inputs[2], out int val3))
-                                amount3 = val3;
-                            else
-                            {
-                                Console.WriteLine($"Invalid number: {inputs[2]}");
-                                return;
-                            }
-                        }
-                        Models.Admin.RunCmdResponse rsp = AdminCommands.AddAllEq(user, amount1, amount2, amount3);
-                        if (!rsp.ok) Console.WriteLine(rsp.error);
-                    }
-                }
-            }
-            else if (input == "finishalltutorials")
-            {
-                if (selectedUser == 0)
-                {
-                    Console.WriteLine("No user selected");
-                }
-                else
-                {
-                    User? user = JsonDb.Instance.Users.FirstOrDefault(x => x.ID == selectedUser);
-                    if (user == null)
-                    {
-                        Console.WriteLine("Selected user does not exist");
-                        selectedUser = 0;
-                        prompt = "# ";
-                    }
-                    else
-                    {
-                        Models.Admin.RunCmdResponse rsp = AdminCommands.FinishAllTutorials(user);
-                        if (!rsp.ok) Console.WriteLine(rsp.error);
-                    }
-                }
-            }
-            else if (input.StartsWith("SetCoreLevel"))
-            {
-                if (selectedUser == 0)
-                {
-                    Console.WriteLine("No user selected");
-                }
-                else
-                {
-                    User? user = JsonDb.Instance.Users.FirstOrDefault(x => x.ID == selectedUser);
-                    if (user == null)
-                    {
-                        Console.WriteLine("Selected user does not exist");
-                        selectedUser = 0;
-                        prompt = "# ";
-                    }
-                    else if (args.Length == 2 && int.TryParse(args[1], out int inputGrade) && inputGrade >= 0 && inputGrade <= 11)
-                    {
-                        Models.Admin.RunCmdResponse rsp = AdminCommands.SetCoreLevel(user, inputGrade);
-                        if (!rsp.ok) Console.WriteLine(rsp.error);
-                    }
-                    else
-                    {
-                        Console.WriteLine("Invalid argument. Core level must be between 0 and 11.");
-                    }
-                }
-
-                // Save the updated data
-                JsonDb.Save();
-
-            }
-            else if (input == "sickpulls")
-            {
-                if (selectedUser == 0)
-                {
-                    Console.WriteLine("No user selected");
-                }
-                else
-                {
-                    User? user = JsonDb.Instance.Users.FirstOrDefault(x => x.ID == selectedUser);
-                    if (user == null)
-                    {
-                        Console.WriteLine("Selected user does not exist");
-                        selectedUser = 0;
-                        prompt = "# ";
-                    }
-                    else
-                    {
-                        // Check current value of sickpulls and toggle it
-                        bool currentSickPulls = EpinelPS.Database.JsonDb.IsSickPulls(user);
-                        if (currentSickPulls)
-                        {
-                            user.sickpulls = false;
-                            Console.WriteLine("sickpulls is now set to false for user " + user.Username);
-                        }
-                        else
-                        {
-                            user.sickpulls = true;
-                            Console.WriteLine("sickpulls is now set to true for user " + user.Username);
-                        }
-
-                        // Save the changes to the database
-                        JsonDb.Save();
-                    }
-                }
-            }
-            else if (input.StartsWith("SetLevel"))
-            {
-                if (selectedUser == 0)
-                {
-                    Console.WriteLine("No user selected");
-                }
-                else
-                {
-                    User? user = JsonDb.Instance.Users.FirstOrDefault(x => x.ID == selectedUser);
-                    if (user == null)
-                    {
-                        Console.WriteLine("Selected user does not exist");
-                        selectedUser = 0;
-                        prompt = "# ";
-                    }
-                    else if (args.Length == 2 && int.TryParse(args[1], out int level) && level >= 1 && level <= 999)
-                    {
-                        Models.Admin.RunCmdResponse rsp = AdminCommands.SetCharacterLevel(user, level);
-                        if (!rsp.ok) Console.WriteLine(rsp.error);
-                    }
-                    else
-                    {
-                        Console.WriteLine("Invalid argument. Level must be between 1 and 999.");
-                    }
-                }
-
-                // Save the updated data
-                JsonDb.Save();
-            }
-            else if (input.StartsWith("SetSkillLevel"))
-            {
-                if (selectedUser == 0)
-                {
-                    Console.WriteLine("No user selected");
-                }
-                else
-                {
-                    User? user = JsonDb.Instance.Users.FirstOrDefault(x => x.ID == selectedUser);
-                    if (user == null)
-                    {
-                        Console.WriteLine("Selected user does not exist");
-                        selectedUser = 0;
-                        prompt = "# ";
-                    }
-                    else if (args.Length == 2 && int.TryParse(args[1], out int skillLevel) && skillLevel >= 1 && skillLevel <= 10)
-                    {
-                        Models.Admin.RunCmdResponse rsp = AdminCommands.SetSkillLevel(user, skillLevel);
-                        if (!rsp.ok) Console.WriteLine(rsp.error);
-                    }
-                    else
-                    {
-                        Console.WriteLine("Invalid argument. Skill level must be between 1 and 10.");
-                    }
-                }
-            }
-
-            else if (input.StartsWith("rmuser"))
-            {
-                if (selectedUser == 0)
-                {
-                    Console.WriteLine("No user selected");
-                }
-                else
-                {
-                    User? user = JsonDb.Instance.Users.FirstOrDefault(x => x.ID == selectedUser);
-                    if (user == null)
-                    {
-                        Console.WriteLine("Selected user does not exist");
-                        selectedUser = 0;
-                        prompt = "# ";
-                    }
-                    else
-                    {
-                        Console.Write("Are you sure you want to delete user " + user.Username + "? (y/n) ");
-                        string? confirm = Console.ReadLine();
-                        if (confirm == "y")
-                        {
-                            JsonDb.Instance.Users.Remove(user);
-                            JsonDb.Save();
-                            Console.WriteLine("User deleted");
-                            selectedUser = 0;
-                            prompt = "# ";
-                        }
-                        else
-                        {
-                            Console.WriteLine("User not deleted");
-                        }
-                    }
-                }
-            }
-            else if (input.StartsWith("completestage"))
-            {
-                if (selectedUser == 0)
-                {
-                    Console.WriteLine("No user selected");
-                }
-                else
-                {
-                    if (args.Length == 2)
-                    {
-                        string input2 = args[1];
-                        Models.Admin.RunCmdResponse rsp = AdminCommands.CompleteStage(selectedUser, input2);
-                        if (!rsp.ok) Console.WriteLine(rsp.error);
-                    }
-                    else
-                    {
-                        Console.WriteLine("Invalid argument length, must be 1");
-                    }
-                }
-            }
-            else if (input.StartsWith("AddItem"))
-            {
-                if (selectedUser == 0)
-                {
-                    Console.WriteLine("No user selected");
-                }
-                else
-                {
-                    User? user = JsonDb.Instance.Users.FirstOrDefault(x => x.ID == selectedUser);
-                    if (user == null)
-                    {
-                        Console.WriteLine("Selected user does not exist");
-                        selectedUser = 0;
-                        prompt = "# ";
-                    }
-                    else
-                    {
-                        if (args.Length == 3)
-                        {
-                            if (int.TryParse(args[1], out int itemId) && int.TryParse(args[2], out int amount))
-                            {
-                                Models.Admin.RunCmdResponse rsp = AdminCommands.AddItem(user, itemId, amount);
-                                if (!rsp.ok) Console.WriteLine(rsp.error);
-                            }
-                            else
-                            {
-                                Console.WriteLine("Invalid item ID or amount");
-                            }
-                        }
-                        else
-                        {
-                            Console.WriteLine("Invalid argument length, must be 2");
-                        }
-                    }
-                }
-            }
-            else if (input.StartsWith("AddCharacter"))
-            {
-                if (selectedUser == 0)
-                {
-                    Console.WriteLine("No user selected");
-                }
-                else
-                {
-                    User? user = JsonDb.Instance.Users.FirstOrDefault(x => x.ID == selectedUser);
-                    if (user == null)
-                    {
-                        Console.WriteLine("Selected user does not exist");
-                        selectedUser = 0;
-                        prompt = "# ";
-                    }
-                    else
-                    {
-                        if (args.Length == 2)
-                        {
-                            if (int.TryParse(args[1], out int characterId))
-                            {
-                                Models.Admin.RunCmdResponse rsp = AdminCommands.AddCharacter(user, characterId);
-                                if (!rsp.ok) Console.WriteLine(rsp.error);
-                            }
-                            else
-                            {
-                                Console.WriteLine("Invalid character ID");
-                            }
-                        }
-                        else
-                        {
-                            Console.WriteLine("Invalid argument length, must be 1");
-                        }
-                    }
-                }
-            }
-            else if (input == "exit")
-            {
-                Environment.Exit(0);
-            }
-            else if (input == "r")
-            {
-                JsonDb.Reload();
-            }
-            else
-            {
-                Console.WriteLine("Unknown command");
-            }
-        }
-    }
     private static readonly string LauncherEndpoint = Encoding.UTF8.GetString(Convert.FromBase64String("L25pa2tlX2xhdW5jaGVy"));
-
 
     public static string GetCachePathForPath(string path)
     {
         return AppDomain.CurrentDomain.BaseDirectory + "cache/" + path;
     }
-  
+
 }

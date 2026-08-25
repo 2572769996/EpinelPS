@@ -48,17 +48,24 @@ public static class LobbyHandler
         // handle authentication
         if (ctx.Request.Headers.ContainsKey("Authorization"))
         {
-            PasetoTokenValidationResult encryptionToken = new PasetoBuilder().Use(ProtocolVersion.V4, Purpose.Local)
+            try
+            {
+                PasetoTokenValidationResult encryptionToken = new PasetoBuilder().Use(ProtocolVersion.V4, Purpose.Local)
                            .WithKey(JsonDb.Instance.LauncherTokenKey, Encryption.SymmetricKey)
                            .Decode(ctx.Request.Headers.Authorization.ToString().Replace("Bearer ", ""), new PasetoTokenValidationParameters() { ValidateLifetime = true });
 
-            if (encryptionToken.IsValid)
+                if (encryptionToken.IsValid)
+                {
+                    var id = ((System.Text.Json.JsonElement)encryptionToken.Paseto.Payload["userId"]).GetUInt64();
+
+                    if (id == 0) throw new Exception("403");
+
+                    ctx.Items["UserID"] = id;
+                }
+            }
+            catch
             {
-                var id = ((System.Text.Json.JsonElement)encryptionToken.Paseto.Payload["userId"]).GetUInt64();
 
-                if (id == 0) throw new Exception("403");
-
-                ctx.Items["UserID"] = id;
             }
         }
 
@@ -72,7 +79,7 @@ public static class LobbyHandler
 
         if (handler == null)
         {
-            Logging.WriteLine($"Error: Implementation for {path} not found", LogType.Error);
+            Logging.WriteLine($"[LobbyHandler] No handler for: {path}", LogType.Error);
             //ctx.Response.StatusCode = 404;
 
             // to prevent "reloading" of the game for now, return empty response
@@ -82,7 +89,6 @@ public static class LobbyHandler
         }
         else
         {
-            handler.Reset();
             await handler.HandleAsync(ctx);
             return;
         }
@@ -141,6 +147,7 @@ public static class LobbyHandler
             IconPrism = user.ProfileIconIsPrism,
             InfraCoreExp = user.InfraCoreExp,
             InfraCoreLv = user.InfraCoreLvl,
+            Desc = user.Description
         };
 
 
@@ -155,10 +162,13 @@ public static class LobbyHandler
             });
         }
 
+        ret.CounselCount = user.ResetableData.DailyCounselCount[1];
+        ret.OutpostFastBattleCount = user.ResetableData.WipeoutCount;        
         return ret;
     }
     public static NetWholeUserData CreateWholeUserDataFromDbUser(User user)
     {
+        var userDB = GameContext.Instance.Users.Find((ulong)user.ID);
         NetWholeUserData ret = new()
         {
             Lv = user.userPointData.UserLevel,
@@ -166,7 +176,27 @@ public static class LobbyHandler
             Icon = user.ProfileIconId,
             IconPrism = user.ProfileIconIsPrism,
             UserTitleId = user.TitleId,
-            Nickname = user.Nickname,
+            Nickname = userDB.Nickname,
+            Usn = (long)user.ID,
+            LastActionAt = DateTimeOffset.UtcNow.Ticks,
+            Server = 1001
+        };
+
+        return ret;
+    }
+
+    public static NetWholeUserData CreateWholeUserDataFromDbUser(ulong id)
+    {
+        var userDB = GameContext.Instance.Users.Find((ulong)id);
+        var user = JsonDb.Instance.Users.Where(x=>x.ID == id).FirstOrDefault();
+        NetWholeUserData ret = new()
+        {
+            Lv = user.userPointData.UserLevel,
+            Frame = user.ProfileFrame,
+            Icon = user.ProfileIconId,
+            IconPrism = user.ProfileIconIsPrism,
+            UserTitleId = user.TitleId,
+            Nickname = userDB.Nickname,
             Usn = (long)user.ID,
             LastActionAt = DateTimeOffset.UtcNow.Ticks,
             Server = 1001

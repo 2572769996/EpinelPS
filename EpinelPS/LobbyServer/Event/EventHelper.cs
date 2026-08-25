@@ -1,4 +1,5 @@
 using EpinelPS.Data;
+using EpinelPS.Database;
 using EpinelPS.Utils;
 using log4net;
 using Newtonsoft.Json;
@@ -155,6 +156,26 @@ public class EventHelper
                 // EventDisableDate = banner.EndDate.Ticks,
                 // EventEndDate = banner.EndDate.Ticks
             });
+
+            // We also need to check if there is a step payback event attached to the gacha
+           foreach(var gachaBanner in GameData.Instance.gachaTypes.Where(g => g.Value.EventId == gachaEvent.Id))
+            {
+                // We have the gacha, now check for a payback table
+                foreach(var payback in GameData.Instance.GachaPaybackRecords.Where( p => p.Value.GachaId == gachaBanner.Value.Id)){
+
+                    // Get the type from the evevent manager table
+                    if (GameData.Instance.eventManagers.ContainsKey(payback.Value.EventId)){
+
+                        var ev = GameData.Instance.eventManagers[payback.Value.EventId];
+
+                        events.Add(new NetEventData()
+                        {
+                            Id = ev.Id,
+                            EventSystemType = (int) ev.EventSystemType
+                        });
+                    }
+                }
+            }
         }
         return events;
     }
@@ -198,13 +219,21 @@ public class EventHelper
         var lobbyPrivateBannerIds = user.LobbyPrivateBannerIds;
         var lobbyPrivateBannerRecords = GameData.Instance.LobbyPrivateBannerTable.Values;
         List<LobbyPrivateBannerRecord> lobbyPrivateBanners = [];
+
+        // Priority 1: user-specific banner IDs
         if (lobbyPrivateBannerIds is not null && lobbyPrivateBannerIds.Count > 0)
         {
             lobbyPrivateBanners = [.. lobbyPrivateBannerRecords.Where(b => lobbyPrivateBannerIds.Contains(b.Id))];
         }
-        else
+        // Priority 2: server-wide active event banners (configured via admin panel)
+        else if (JsonDb.Instance.ActiveEventBannerIds.Count > 0)
         {
-            lobbyPrivateBanners.Add(lobbyPrivateBannerRecords.OrderBy(b => b.EventId).Last());
+            lobbyPrivateBanners = [.. lobbyPrivateBannerRecords.Where(b => JsonDb.Instance.ActiveEventBannerIds.Contains(b.Id))];
+        }
+        // Priority 3: fallback to the latest event
+        if (lobbyPrivateBanners.Count == 0)
+        {
+            lobbyPrivateBanners.Add(lobbyPrivateBannerRecords.Last());
         }
         Logging.WriteLine($"Found {lobbyPrivateBanners.Count} active lobby private banners.", LogType.Debug);
         log.Debug($"Active lobby private banners: {JsonConvert.SerializeObject(lobbyPrivateBanners)}");
@@ -219,8 +248,8 @@ public class EventHelper
             // Avoid adding duplicate events
             if (!response.EventList.Any(e => e.Id == eventData.Id))
             {
-                if (eventData.EventStartDate == 0) eventData.EventStartDate = DateTime.UtcNow.AddDays(-1).Ticks;
-                if (eventData.EventVisibleDate == 0) eventData.EventVisibleDate = DateTime.UtcNow.AddDays(-1).Ticks;
+                if (eventData.EventStartDate == 0) eventData.EventStartDate = DateTime.UtcNow.AddDays(-21).Ticks;
+                if (eventData.EventVisibleDate == 0) eventData.EventVisibleDate = DateTime.UtcNow.AddDays(-21).Ticks;
                 if (eventData.EventDisableDate == 0) eventData.EventDisableDate = DateTime.UtcNow.AddDays(30).Ticks;
                 if (eventData.EventEndDate == 0) eventData.EventEndDate = DateTime.UtcNow.AddDays(30).Ticks;
 
@@ -242,8 +271,8 @@ public class EventHelper
             // Avoid adding duplicate events
             if (!response.EventWithJoinData.Any(e => e.EventData.Id == eventData.Id))
             {
-                if (eventData.EventStartDate == 0) eventData.EventStartDate = DateTime.UtcNow.AddDays(-1).Ticks;
-                if (eventData.EventVisibleDate == 0) eventData.EventVisibleDate = DateTime.UtcNow.AddDays(-1).Ticks;
+                if (eventData.EventStartDate == 0) eventData.EventStartDate = DateTime.UtcNow.AddDays(-21).Ticks;
+                if (eventData.EventVisibleDate == 0) eventData.EventVisibleDate = DateTime.UtcNow.AddDays(-21).Ticks;
                 if (eventData.EventDisableDate == 0) eventData.EventDisableDate = DateTime.UtcNow.AddDays(30).Ticks;
                 if (eventData.EventEndDate == 0) eventData.EventEndDate = DateTime.UtcNow.AddDays(30).Ticks;
                 response.EventWithJoinData.Add(new NetEventWithJoinData()

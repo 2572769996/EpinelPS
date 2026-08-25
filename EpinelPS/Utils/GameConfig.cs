@@ -7,8 +7,19 @@ public class GameConfigRoot
 {
     public StaticData StaticDataMpk { get; set; } = new();
     public string ResourceBaseURL { get; set; } = "";
+    /// <summary>Resource data-pack number used to locate the CDN latest file.</summary>
+    public string ResourceDataPackVersion { get; set; } = "";
     public string GameMinVer { get; set; } = "";
     public string GameMaxVer { get; set; } = "";
+    /// <summary>
+    /// Development-only switch that grants in-app products.
+    /// </summary>
+    public bool EnablePurchaseSimulation { get; set; }
+    /// <summary>
+    /// When true, all archive records are returned as unlocked. When omitted or false,
+    /// archive unlocks are determined from the user's archive progress.
+    /// </summary>
+    public bool? ArchiveUnlockAll { get; set; }
     /// <summary>
     /// this is only for displaying the target version in admin console or cli
     /// </summary>

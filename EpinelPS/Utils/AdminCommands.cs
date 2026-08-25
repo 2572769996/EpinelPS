@@ -59,6 +59,20 @@ public class AdminCommands
         }
         client.DefaultRequestHeaders.Add("Accept", "application/octet-stream+protobuf");
     }
+    public static RunCmdResponse CompleteAllStages(ulong userId)
+    {
+        // Find max chapter number
+        var chapters = GameData.Instance.ChapterCampaignData.Values;
+        int maxChapter = chapters.Max(c => c.Chapter);
+
+        // Find max stage count for that chapter (main stages)
+        int maxStage = GameData.Instance.GetStageIdsForChapter(maxChapter, true).Count();
+
+        if (maxStage == 0) maxStage = 1;
+
+        return CompleteStage(userId, $"{maxChapter}-{maxStage}");
+    }
+
     public static RunCmdResponse CompleteStage(ulong userId, string input2)
     {
         User? user = JsonDb.Instance.Users.FirstOrDefault(x => x.ID == userId);
@@ -174,12 +188,96 @@ public class AdminCommands
 
                 user.BondInfo.Add(new() { NameCode = character.NameCode, Lv = 1 });
                 user.AddTrigger(Trigger.ObtainCharacter, 1, character.NameCode);
-                user.AddTrigger(Trigger.ObtainCharacterNew, 1);
+                user.AddTrigger(Trigger.ObtainCharacterNew, 1, 0);
             }
         }
 
         JsonDb.Save();
 
+        return RunCmdResponse.OK;
+    }
+
+    public static RunCmdResponse AddAllCostumes(User user)
+    {
+        foreach (var kv in GameData.Instance.CharacterCostumeTable)
+        {
+            user.AddUnique(user.CostumeList, kv.Key);
+        }
+        JsonDb.Save();
+        return RunCmdResponse.OK;
+    }
+
+    public static RunCmdResponse AddAllCollections(User user)
+    {
+        // 1. Set all characters' bond level to 30
+        foreach (CharacterModel character in user.Characters)
+        {
+            if (!GameData.Instance.CharacterTable.TryGetValue(character.Tid, out var charRecord)) continue;
+
+            NetUserAttractiveData? bondInfo = user.BondInfo.FirstOrDefault(b => b.NameCode == charRecord.NameCode);
+            if (bondInfo == null)
+            {
+                bondInfo = new NetUserAttractiveData { NameCode = charRecord.NameCode };
+                user.BondInfo.Add(bondInfo);
+            }
+            bondInfo.Lv = 30;
+            bondInfo.Exp = 0;
+        }
+
+        // 2. Add all collections, equipping to matching character if found
+        foreach (FavoriteItemRecord record in GameData.Instance.FavoriteItemTable.Values)
+        {
+            NetUserFavoriteItemData? item = user.FavoriteItems.FirstOrDefault(f => f.Tid == record.Id);
+            if (item == null)
+            {
+                item = new NetUserFavoriteItemData
+                {
+                    FavoriteItemId = user.GenerateUniqueItemId(),
+                    Tid = record.Id,
+                    Csn = 0,
+                    Lv = record.MaxLevel,
+                    Exp = 0
+                };
+                user.FavoriteItems.Add(item);
+            }
+
+            // Try to equip to a character matching this collection's NameCode
+            CharacterModel? match = user.Characters.FirstOrDefault(c =>
+                GameData.Instance.CharacterTable.TryGetValue(c.Tid, out var cr) &&
+                cr.NameCode == record.NameCode);
+
+            if (match != null)
+            {
+                NetUserFavoriteItemData? other = user.FavoriteItems.FirstOrDefault(f => f.Csn == match.Csn && f.Tid != record.Id);
+                if (other != null) other.Csn = 0;
+
+                item.Csn = match.Csn;
+                item.Lv = record.MaxLevel;
+            }
+        }
+
+        JsonDb.Save();
+        return RunCmdResponse.OK;
+    }
+
+    public static RunCmdResponse SetAllBondLevel(User user, int level)
+    {
+        level = Math.Clamp(level, 1, 30);
+
+        foreach (CharacterModel character in user.Characters)
+        {
+            if (!GameData.Instance.CharacterTable.TryGetValue(character.Tid, out var charRecord)) continue;
+
+            NetUserAttractiveData? bondInfo = user.BondInfo.FirstOrDefault(b => b.NameCode == charRecord.NameCode);
+            if (bondInfo == null)
+            {
+                bondInfo = new NetUserAttractiveData { NameCode = charRecord.NameCode };
+                user.BondInfo.Add(bondInfo);
+            }
+            bondInfo.Lv = level;
+            bondInfo.Exp = 0;
+        }
+        JsonDb.Save();
         return RunCmdResponse.OK;
     }
 
@@ -206,7 +304,6 @@ public class AdminCommands
             }
         }
 
-        Console.WriteLine($"Added {amount} of all materials to user " + user.Username);
         JsonDb.Save();
         return RunCmdResponse.OK;
     }
@@ -278,19 +375,10 @@ public class AdminCommands
         }
         if (amount3 > 0)
         {
-            int[] sequence = { 0, 1, 2, 3, 4, 7 };
-            int[] T9Equment = {3110901,
-        3210901,
-        3310901,
-        3410901,
-        3120901,
-        3220901,
-        3320901,
-        3420901,
-        3130901,
-        3230901,
-        3330901,
-        3430901};
+            int[] sequence = [0, 1, 2, 3, 4, 7];
+            var T9Equment = GameData.Instance.ItemEquipTable.Values
+                .Where(item => item.ResourceId.EndsWith("_t9_1"))
+                .Select(item => item.Id);
             foreach (int corp in sequence)
             {
                 foreach (int tableItem in T9Equment)
@@ -311,7 +399,7 @@ public class AdminCommands
                 }
             }
         }
-        Console.WriteLine($"Added {amount1} of all FavoriteItem, {amount2} of all consumables, and {amount3} of all equipment to user " + user.Username);
+        Console.WriteLine($"Added {amount1} of all FavoriteItem, {amount2} of all consumables, and {amount3} of all equipment to user " + user.ID);
         JsonDb.Save();
         return RunCmdResponse.OK;
     }
@@ -338,7 +426,6 @@ public class AdminCommands
             }
         }
 
-        Console.WriteLine("Finished all tutorials for user " + user.Username);
         JsonDb.Save();
         return RunCmdResponse.OK;
     }
@@ -464,13 +551,13 @@ public class AdminCommands
                 UltimateLevel = 1
             });
 
-            Console.WriteLine($"Added character {characterId} to user {user.Username}");
+            Console.WriteLine($"Added character {characterId} to user");
             JsonDb.Save();
             return RunCmdResponse.OK;
         }
         else
         {
-            return new RunCmdResponse() { error = $"User {user.Username} already has character {characterId}" };
+            return new RunCmdResponse() { error = $"User already has character {characterId}" };
         }
     }
 
@@ -499,11 +586,53 @@ public class AdminCommands
             }
         }
 
-        Console.WriteLine($"Added {amount} of item {itemId} to user {user.Username}");
         JsonDb.Save();
         return RunCmdResponse.OK;
     }
 
+    public static RunCmdResponse SendMail(User user, int senderId, string title, string content, int validDays, List<MailAttachment> attachments)
+    {
+        try
+        {
+            // 创建邮件
+            NetUserMailData mailData = new()
+            {
+                Sender = senderId,
+                Msn =User.GenerateMsn(),
+                CreatedAt = DateTime.Now.Ticks,
+                HasReward = attachments != null && attachments.Count > 0,
+                Nickname = "",
+                Title = new() { IsPlain = true, Str = title },
+                Text = new() { IsPlain = true, Str = content },
+                State = 1,  // 1-未领取，2-已领取
+                Type = 1,
+                Period = validDays
+            };
+            // 添加附件
+            if (attachments != null && attachments.Count > 0)
+            {
+                foreach (var att in attachments)
+                {
+                    mailData.Items.Add(new NetMailRewardItem()
+                    {
+                        ExpiredAt = DateTime.Now.AddDays(validDays).Ticks,
+                        RewardId = att.Id,
+                        RewardType = att.Type,
+                        RewardValue = att.Count
+                    });
+                }
+            }
+            // 保存到用户邮件
+            user.MailDatas.TryAdd(mailData.Msn, mailData);
+            JsonDb.Save();
+
+            return RunCmdResponse.OK;
+        }
+        catch (Exception ex)
+        {
+            return new RunCmdResponse { error = $"发送失败: {ex.Message}" };
+        }
+    }
     internal static async Task<RunCmdResponse> UpdateResources()
     {
         Logging.WriteLine("updating static data and resource info...", LogType.Info);
@@ -526,7 +655,8 @@ public class AdminCommands
         }
 
 
-        ResGetResourceHosts2? resources = await FetchProtobuf<ResGetResourceHosts2, ReqGetResourceHosts2>(resourcesUrl);
+        ResGetResourceHosts2? resources = await FetchProtobuf<ResGetResourceHosts2, ReqGetResourceHosts2>(resourcesUrl,
+            new ReqGetResourceHosts2 { Version = GameConfig.Root.TargetVersion });
         if (resources == null)
         {
             Logging.WriteLine("failed to fetch resource data", LogType.Error);
@@ -534,6 +664,9 @@ public class AdminCommands
         }
 
         GameConfig.Root.ResourceBaseURL = resources.BaseUrl;
+        if (resources.DataPackVersionMap.TryGetValue(GameConfig.Root.TargetVersion, out var dataPackVersion)
+            || resources.DataPackVersionMap.TryGetValue(resources.Version, out dataPackVersion))
+            GameConfig.Root.ResourceDataPackVersion = dataPackVersion;
         GameConfig.Root.StaticDataMpk.Salt1 = staticData2.Salt1.ToBase64();
         GameConfig.Root.StaticDataMpk.Salt2 = staticData2.Salt2.ToBase64();
         GameConfig.Root.StaticDataMpk.Version = staticData2.Version;
@@ -541,6 +674,7 @@ public class AdminCommands
         GameConfig.Save();
 
         await GameData.CreateAsync();
+        await LocaleDataDownloader.DownloadAsync(CancellationToken.None);
 
         return RunCmdResponse.OK;
     }

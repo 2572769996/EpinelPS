@@ -84,12 +84,6 @@ public class RewardUtils
     }
 
 
-    /// <summary>
-    /// ¸ù¾Ý½±ÀøidÁÐ±íÌí¼Ó½±Àø(Bgm×¨ÓÃ)
-    /// </summary>
-    /// <param name="user">ÓÃ»§</param>
-    /// <param name="rewardIds">½±ÀøIdÁÐ±í</param>
-    /// <returns>½±ÀøÊý¾Ý</returns>
     public static NetRewardData RegisterRewardsForUserDou(User user, List<int> rewardIds)
     {
         NetRewardData ret = new()
@@ -99,8 +93,7 @@ public class RewardUtils
 
         foreach (var rewardId in rewardIds)
         {
-
-            RewardRecord rewardData = GameData.Instance.GetRewardTableEntry(rewardId);
+            RewardRecord? rewardData = GameData.Instance.GetRewardTableEntry(rewardId);
 
             if (rewardData != null)
             {
@@ -151,8 +144,6 @@ public class RewardUtils
                         user.userPointData.ExperiencePoint = newXp;
 
                         user.userPointData.UserLevel = newLevel;
-
-                        Console.WriteLine($"[ClearTower] ½±Àø¾­Ñé : {newXp}");
                     }
 
                     foreach (var item in rewardData.Rewards)
@@ -218,7 +209,7 @@ public class RewardUtils
     public static void AddSingleObject(User user, ref NetRewardData ret, int rewardId, RewardType rewardType, int rewardCount)
     {
         if (rewardType == RewardType.None) return;
-        Logging.WriteLine($"[DEBUG]½±ÀøÀàÐÍ{rewardType}", LogType.Info);
+        Logging.WriteLine($"[DEBUG]ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½{rewardType}", LogType.Info);
         if (rewardType == RewardType.Currency)
         {
             AddSingleCurrencyObject(user, ref ret, (CurrencyType)rewardId, rewardCount);
@@ -279,7 +270,7 @@ public class RewardUtils
             else if (rewardType.ToString().StartsWith("Equipment"))
             {
 
-                Console.WriteLine($"[UseBundleBox] ×°±¸ÎïÆ· Id{rewardId} £¬Ìí¼ÓÐÂ×°±¸¡£");
+                Console.WriteLine($"[UseBundleBox] ×°ï¿½ï¿½ï¿½ï¿½Æ· Id{rewardId} ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½×°ï¿½ï¿½ï¿½ï¿½");
 
                 int level = 0; // Default to 0
                 ItemSubType itemSubType = GameData.Instance.GetItemSubType(rewardId);
@@ -392,7 +383,7 @@ public class RewardUtils
             {
                 user.InfraCoreLvl = newLevel;
             }*/
-            Logging.WriteLine($"»ù´¡ºËÐÄ¾­Ñé {user.InfraCoreExp} ,µÈ¼¶ {user.InfraCoreLvl}");
+            Logging.WriteLine($"ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ä¾ï¿½ï¿½ï¿½ {user.InfraCoreExp} ,ï¿½È¼ï¿½ {user.InfraCoreLvl}");
             ret.InfraCoreExp = new NetIncreaseExpData()
             {
                 BeforeLv = beforeLv,
@@ -428,29 +419,30 @@ public class RewardUtils
         }
         else if (rewardType == RewardType.FavoriteItem)
         {
-
-            NetUserFavoriteItemData newFavoriteItem = new NetUserFavoriteItemData
+            for (int i = 0; i < rewardCount; i++)
             {
-                FavoriteItemId = user.GenerateUniqueItemId(),
-                Tid = rewardId,
-                Csn = 0,
-                Lv = 0,
-                Exp = 0
-            };
-            user.FavoriteItems.Add(newFavoriteItem);
+                NetUserFavoriteItemData newFavoriteItem = new NetUserFavoriteItemData
+                {
+                    FavoriteItemId = user.GenerateUniqueItemId(),
+                    Tid = rewardId,
+                    Csn = 0,
+                    Lv = 0,
+                    Exp = 0
+                };
+                user.FavoriteItems.Add(newFavoriteItem);
 
-            ret.UserFavoriteItems.Add(newFavoriteItem);
+                ret.UserFavoriteItems.Add(newFavoriteItem);
 
-            NetFavoriteItemData favoriteItemData = new NetFavoriteItemData
-            {
-                FavoriteItemId = newFavoriteItem.FavoriteItemId,
-                Tid = newFavoriteItem.Tid,
-                Csn = newFavoriteItem.Csn,
-                Lv = newFavoriteItem.Lv,
-                Exp = newFavoriteItem.Exp
-            };
-            ret.FavoriteItems.Add(favoriteItemData);
-
+                NetFavoriteItemData favoriteItemData = new NetFavoriteItemData
+                {
+                    FavoriteItemId = newFavoriteItem.FavoriteItemId,
+                    Tid = newFavoriteItem.Tid,
+                    Csn = newFavoriteItem.Csn,
+                    Lv = newFavoriteItem.Lv,
+                    Exp = newFavoriteItem.Exp
+                };
+                ret.FavoriteItems.Add(favoriteItemData);
+            }
         }
         else if (rewardType == RewardType.Character)
         {
@@ -465,7 +457,6 @@ public class RewardUtils
             {
                 DbItemData? spareItem = user.Items.FirstOrDefault(i => i.ItemType == character.PieceId);
                 int maxLimitBroken = GetValueByRarity(character.OriginalRare, 0, 2, 11) - 1;
-                Logging.WriteLine($"[UseRandomBox] ½ÇÉ«×î´óËéÆ¬: {maxLimitBroken}£¬ÏÖÓÐËéÆ¬ÊýÁ¿ {spareItem.Count}");
 
                 bool canIncreaseItem = character.OriginalRare != OriginalRareType.R && ownedCharacter.Grade + (spareItem?.Count ?? 0) < maxLimitBroken;
                 (int newSpareItemCount, int dissoluteCharacterCount) = canIncreaseItem ? (1, 0) : (0, 1);
@@ -473,12 +464,12 @@ public class RewardUtils
                 {
                     if (spareItem != null)
                     {
-                        //Console.WriteLine($"[UseSelectBox] Ôö¼ÓËéÆ¬: {newSpareItemCount}");
+                        //Console.WriteLine($"[UseSelectBox] ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Æ¬: {newSpareItemCount}");
                         spareItem.Count += newSpareItemCount;
                     }
                     else
                     {
-                        //Console.WriteLine($"[UseSelectBox] ÐÂ½¨ËéÆ¬: {newSpareItemCount}");
+                        //Console.WriteLine($"[UseSelectBox] ï¿½Â½ï¿½ï¿½ï¿½Æ¬: {newSpareItemCount}");
                         spareItem = new()
                         {
                             ItemType = character.PieceId,
@@ -495,7 +486,7 @@ public class RewardUtils
 
                     ret.Item.Add(new NetItemData()
                     {
-                        Count = spareItem.Count,
+                        Count = rewardCount,
                         Tid = spareItem.ItemType,
                         Corporation = spareItem.Corp
                     });
@@ -516,11 +507,11 @@ public class RewardUtils
                 else
                 {
                     // If we cannot increase the item, we give body label instead
-                    //Èç¹ûÎÞ·¨Ôö¼ÓÏîÄ¿£¬ÎÒÃÇ¸ÄÎªÌá¹©Ö÷Ìå±êÇ©
+                    //ï¿½ï¿½ï¿½ï¿½Þ·ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ä¿ï¿½ï¿½ï¿½ï¿½ï¿½Ç¸ï¿½Îªï¿½á¹©ï¿½ï¿½ï¿½ï¿½ï¿½Ç©
 
                     int bodyLabel = GetValueByRarity(character.OriginalRare, 150, 200, 6000);
 
-                    //Console.WriteLine($"[UseSelectBox] ËéÆ¬ÊýÁ¿ÒÑÂú£¬Ö»ÄÜ¼ÓÖ÷Ìå±êÇ©: {bodyLabel} ¸ö");
+                    //Console.WriteLine($"[UseSelectBox] ï¿½ï¿½Æ¬ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ö»ï¿½Ü¼ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ç©: {bodyLabel} ï¿½ï¿½");
 
                     totalBodyLabels += bodyLabel * dissoluteCharacterCount;
                     ret.Character.Add(GetNetCharacterData(ownedCharacter, bodyLabel));
@@ -530,7 +521,7 @@ public class RewardUtils
             }
             else
             {
-                //Console.WriteLine($"[UseSelectBox] ½ÇÉ«²»´æÔÚ£¬Ìí¼Ó½ÇÉ«¡£");
+                //Console.WriteLine($"[UseSelectBox] ï¿½ï¿½É«ï¿½ï¿½ï¿½ï¿½ï¿½Ú£ï¿½ï¿½ï¿½ï¿½Ó½ï¿½É«ï¿½ï¿½");
                 int csn = user.GenerateUniqueCharacterId();
                 ret.UserCharacters.Add(new NetUserCharacterDefaultData
                 {
@@ -589,7 +580,7 @@ public class RewardUtils
         }
         else if (rewardType == RewardType.Frame)
         {
-            Logging.WriteLine($"Ìí¼Ó±ß¿ò{rewardId}", LogType.Info);
+            Logging.WriteLine($"ï¿½ï¿½ï¿½Ó±ß¿ï¿½{rewardId}", LogType.Info);
             UserFrameRecord? record = GameData.Instance.userFrameTable.Values.FirstOrDefault(x => x.Id == rewardId);
             if (record != null)
             {
@@ -606,7 +597,7 @@ public class RewardUtils
         }
         else if (rewardType == RewardType.CharacterCostume)
         {
-            Logging.WriteLine($"Ìí¼Ó·þ×°{rewardId}", LogType.Info);
+            Logging.WriteLine($"ï¿½ï¿½ï¿½Ó·ï¿½×°{rewardId}", LogType.Info);
             var record = GameData.Instance.CharacterCostumeTable.Values.FirstOrDefault(x => x.Id == rewardId);
             if (record != null)
             {
@@ -616,7 +607,7 @@ public class RewardUtils
         }
         else if (rewardType == RewardType.Album)
         {
-            Logging.WriteLine($"Ìí¼Ó×¨¼­{rewardId}", LogType.Info);
+            Logging.WriteLine($"ï¿½ï¿½ï¿½ï¿½×¨ï¿½ï¿½{rewardId}", LogType.Info);
 
             var record = GameData.Instance.jukeboxThemeDataRecords.Values.FirstOrDefault(x => x.Id == rewardId);
             if (record != null)
@@ -634,7 +625,7 @@ public class RewardUtils
         }
         else if (rewardType == RewardType.LiveWallpaper)
         {
-            Logging.WriteLine($"Ìí¼Ó±ÚÖ½{rewardId}", LogType.Info);
+            Logging.WriteLine($"ï¿½ï¿½ï¿½Ó±ï¿½Ö½{rewardId}", LogType.Info);
 
             var record = GameData.Instance.LiveWallpaperTable.Values.FirstOrDefault(x => x.Id == rewardId);
             if (record != null)
@@ -646,7 +637,7 @@ public class RewardUtils
         }
         else if (rewardType == RewardType.ProfileCardObject)
         {
-            Logging.WriteLine($"Ìí¼ÓÌùÖ½{rewardId}", LogType.Info);
+            Logging.WriteLine($"ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ö½{rewardId}", LogType.Info);
 
             ProfileCardObjectRecord? CardObject = GameData.Instance.ProfileCardObjectTable.Where(x => x.Value.Id == rewardId)
             .FirstOrDefault().Value ?? throw new Exception("cannot find Card Object Id " + rewardId);

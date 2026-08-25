@@ -11,7 +11,6 @@ public class ProfileGet : LobbyMessage
         User user = GetUser();
         ResGetMiniGameTtsProfile response = new();
         RankData rank = GetRank();
-        //Logging.WriteLine($"{req.EventTtsManagerTableId}", LogType.Info);
 
         NetMyMiniGameTtsTotalRankData mytotal = new(); 
         NetMiniGameTtsTotalRankData? myrank = rank.TtsRankDatas.TotalGetUserRank((long)user.ID, MiniGameTtsRankingType.Server);
@@ -24,11 +23,14 @@ public class ProfileGet : LobbyMessage
         }
         if (user.TTSGameData.TryGetValue(req.EventTtsManagerTableId, out var ttsData))
         {            
-            response.PlayCountList.AddRange(ttsData.SongPlayCount);            
+            var songPlayList = ttsData.SongPlayCount
+                .Select(m => MiniGameHelper.ToProto<NetMiniGameTtsSongPlayCount, MiniGameTtsSongPlayCount>(m))
+                .ToList();
+
+            response.PlayCountList.AddRange(songPlayList);            
         }
 
         response.MyServerRankData = mytotal;
-        // TODO
         await WriteDataAsync(response);
     }
 }

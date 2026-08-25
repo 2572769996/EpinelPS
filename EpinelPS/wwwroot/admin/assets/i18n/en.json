@@ -1,7 +1,6 @@
 {
   "app": {
-    "name": "EpinelPS Admin Console",
-    "version": "Version v1.0.0",
+    "name": "EpinelPS",
     "footer": "© 2025 EpinelPS"
   },
   "auth": {
@@ -27,6 +26,8 @@
     "edit": "Edit",
     "actions": "Actions",
     "search": "Search",
+    "add": "Add",
+    "back": "Back",
     "status": {
       "online": "Online",
       "offline": "Offline"
@@ -37,10 +38,11 @@
     }
   },
   "nav": {
-    "dashboard": "Dashboard",
+    "dashboard": "Overview",
     "events": "Events",
     "users": "Users",
     "mail": "Mail",
+    "search": "ID Search",
     "config": "Configuration",
     "database": "Database",
     "profile": "Profile",
@@ -99,9 +101,13 @@
         "title": "Mail System",
         "desc": "Send system mails and rewards to players"
       },
+      "search": {
+        "title": "ID Search",
+        "desc": "Search IDs for characters, items, costumes, etc."
+      },
       "database": {
         "title": "Database",
-        "desc": "Manage and maintain game database"
+        "desc": "Configure database"
       },
       "enter": "Enter"
     }
@@ -165,10 +171,15 @@
       "setCharLevels": "Set Character Levels",
       "setSkillLevels": "Set Skill Levels",
       "setCoreLevel": "Set Core Level",
+      "setBondLevel": "Set Bond Level",
       "inventory": "Inventory:",
       "addAllEquip": "Add All Equipment",
+      "addCurrency": "Add Currency",
       "addItem": "Add Item",
       "misc": "Miscellaneous:",
+      "completeAllStages": "Complete All Stages",
+      "addAllCostumes": "Add All Costumes",
+      "addAllCollections": "Add All Collections",
       "finishTutorials": "Finish All Tutorials",
       "backToList": "Back to List"
     },
@@ -191,19 +202,146 @@
     }
   },
   "events": {
-    "config": {
-      "title": "Event Configuration",
-      "comingSoon": "Coming Soon!"
-    }
+    "title": "Event Configuration",
+    "backToList": "Back",
+    "save": "Save Configuration",
+    "activateLatest": "Activate Latest",
+    "activeCount": "Currently active",
+    "noSelection": "None selected, will show latest event by default",
+    "allEvents": "All Events",
+    "perPage": "Per page",
+    "perPageAll": "All",
+    "items": "items",
+    "searchPlaceholder": "Search event name...",
+    "colActive": "Active",
+    "colName": "Event Name",
+    "colBannerId": "Banner ID",
+    "colEventId": "Event ID",
+    "pageInfo": "{{total}} items, {{pages}} pages",
+    "pageInfoCurrent": " (Page {{page}}/{{pages}})",
+    "saved": "Configuration saved"
   },
   "mail": {
-    "title": "In-game Mail",
-    "comingSoon": "Coming Soon!"
+    "title": "Send Mail",
+    "backToList": "Back",
+    "compose": "Mail Content",
+    "recipientId": "Recipient ID",
+    "sender": "Sender",
+    "ftitle": "Title",
+    "content": "Content",
+    "validDays": "Valid Days",
+    "attachments": "Attachments",
+    "itemType": "Item Type",
+    "itemId": "Item ID",
+    "quantity": "Quantity",
+    "action": "Action",
+    "addRow": "Add Row",
+    "days": "days",
+    "send": "Send Mail",
+    "confirm": "Confirm",
+    "cancel": "Cancel",
+    "syephy": "Shifty",
+    "mustang": "Mustang",
+    "andersen": "Andersen",
+    "placeholderRecipient": "Enter recipient ID or select user",
+    "hintRecipient": "Enter numeric ID, or select from dropdown",
+    "placeholderTitle": "Enter mail title",
+    "placeholderContent": "Enter mail content",
+    "placeholderDays": "Enter days",
+    "placeholderItemId": "Item ID",
+    "placeholderQuantity": "Quantity",
+    "alertSuccess": "Success",
+    "alertError": "Error",
+    "sendSuccess": "Mail sent successfully!",
+    "sendFailed": "Send failed",
+    "unknownError": "Unknown error",
+    "needRecipient": "Please enter recipient ID",
+    "invalidRecipient": "Recipient ID must be numeric",
+    "needTitle": "Please enter mail title",
+    "needContent": "Please enter mail content",
+    "needOneRow": "At least one row is required",
+    "searchOrEnterId": "Search or enter ID",
+    "noIdNeeded": "No ID needed",
+    "searching": "Searching...",
+    "loadFailed": "Load failed",
+    "noNickname": "No nickname set",
+    "alertTitle": "Result",
+    "rewardType": {
+      "none": "None",
+      "userExp": "UserExp",
+      "charExp": "CharExp",
+      "currency": "Currency",
+      "character": "Character",
+      "item": "Item",
+      "frame": "Frame",
+      "bgm": "Bgm",
+      "liveWallpaper": "LiveWallpaper",
+      "characterCostume": "CharacterCostume",
+      "itemRandom": "ItemRandom",
+      "infraCoreExp": "InfraCoreExp",
+      "itemRandomBox": "ItemRandomBox",
+      "favoriteItem": "FavoriteItem",
+      "profileCardObject": "ProfileCardObject",
+      "userTitle": "UserTitle",
+      "lobbyDecoBackground": "LobbyDecoBackground",
+      "album": "Album"
+    }
+  },
+  "search": {
+    "title": "ID Search",
+    "backToList": "Back",
+    "type": "Type",
+    "typeCharacter": "Character",
+    "typeItem": "Item",
+    "typeFrame": "Frame",
+    "typeBgm": "BGM",
+    "typeLiveWallpaper": "Live Wallpaper",
+    "typeCostume": "Costume",
+    "typeFavoriteItem": "Favorite Item",
+    "typeProfileCard": "Profile Card",
+    "typeTitle": "Title",
+    "typeAlbum": "Album",
+    "queryLabel": "Search Name or ID",
+    "queryPlaceholder": "Enter name or ID to search...",
+    "button": "Search",
+    "results": "Search Results",
+    "perPage20": "20 / page",
+    "perPage50": "50 / page",
+    "perPage100": "100 / page",
+    "perPageAll": "All",
+    "searching": "Searching...",
+    "resultsCount": "{{count}} results",
+    "noResults": "No matching results found",
+    "searchFailed": "Search failed, check server connection",
+    "pageInfo": "{{total}} results - Page {{page}}/{{pages}}",
+    "copyId": "Copy ID",
+    "copied": "Copied!",
+    "initialHint": "Select a type and enter keywords to search",
+    "colId": "ID",
+    "colName": "Name",
+    "colAction": "Action"
+  },
+  "currency": {
+    "title": "Modify User Currency",
+    "backToModify": "Back to Modify User",
+    "addTitle": "Add Currency",
+    "type": "Currency Type",
+    "amount": "Amount",
+    "add": "Add",
+    "back": "Back",
+    "current": "Current Currency",
+    "noCurrency": "No currency data"
+  },
+  "soloRaidMuseum": {
+    "debugTitle": "Test damage multiplier", "debugHelp": "1 keeps normal damage. 100 multiplies battle result damage by 100 for this player's museum only.", "debugMultiplier": "Damage multiplier", "saved": "Saved", "saveError": "Save failed", "resetSeason": "Reset current season", "resetConfirm": "Reset this player's entire season for the selected stage? Scores, claimed missions, and No Limit unlock will be cleared.", "resetError": "Season reset failed", "resetDone": "Season reset",
+    "title": "Solo Raid Museum Records", "back": "Back", "user": "Player (nickname or ID)", "userPlaceholder": "Search nickname", "stage": "Stage", "mode": "Mode", "challenge": "Challenge", "noLimit": "No Limit", "load": "Load record", "selectHint": "Select a player and stage, then load the record. For example, Group 1 · Stage 1 is displayed by the client as Stage 101.", "quickHelpTitle": "Cannot complete all five teams?", "quickHelp": "Enter Best damage first, then click Complete five teams. It will generate five completed team records; save afterward. Check In progress only for an unfinished run.", "completeWithBest": "Complete five teams", "clearCurrent": "Clear unfinished run", "joinCount": "Teams played (0-5)", "totalDamage": "Current total damage", "totalStep": "Current total step", "bestDamage": "Best damage", "bestStep": "Best step", "inProgress": "In progress", "completedTitle": "Completed five-team records", "completedHint": "Used for history and team icons", "currentTitle": "Current unfinished records", "currentHint": "Temporary records for an active run", "save": "Save changes", "team": "Team", "damage": "Damage", "step": "Step", "stageOption": "Group {{group}} · Stage {{stage}} · {{name}} (#{{id}})", "completeMessage": "Generated five completed team records. Click Save changes.", "bestDamageRequired": "Enter a Best damage value greater than 0 first.", "clearMessage": "Cleared the unfinished run. Click Save changes.", "selectError": "Select a player and stage", "loadError": "Load failed"
   },
   "config": {
     "server": {
       "title": "Server Configuration",
       "logLevel": "Log Level:",
+      "gamePath": "Game installation directory (for localized character/costume names)",
+      "gamePathHint": "The server will read localization files from the game's Unity/.../lss directory.",
       "updateResources": "Update Resources",
       "updateResourcesHint": "Downloads asset and static data info from official server."
     },

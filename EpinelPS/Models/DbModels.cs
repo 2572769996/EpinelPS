@@ -20,6 +20,9 @@ public class FieldInfoNew
 {
     public List<int> CompletedStages { get; set; } = [];
     public List<NetFieldObject> CompletedObjects { get; set; } = [];
+    public List<int> FieldItemTableIdList { get; set; } = [];
+    public List<int> AcquiredPasswordList { get; set; } = [];
+    public List<int> UnlockedDoorList { get; set; } = [];
     public bool BossEntered { get; set; } = false;
 }
 
@@ -83,6 +86,46 @@ public class EventData
     public int LastDay { get; set; } = 0;
     public int FreeTicket { get; set; } = 0;
 }
+public class EventCollectData
+{
+    public int EventCollectManagerId { get; set; }
+    public List<int> EventCollectIdList { get; set; } = [];
+
+    public NetEventCollectData ToNet()
+    {
+        var net = new NetEventCollectData
+        {
+            EventCollectManagerId = EventCollectManagerId
+        };
+        net.EventCollectIdList.AddRange(EventCollectIdList);
+        return net;
+    }
+
+    public static EventCollectData FromNet(NetEventCollectData net)
+    {
+        if (net == null) return null;
+
+        return new EventCollectData
+        {
+            EventCollectManagerId = net.EventCollectManagerId,
+            EventCollectIdList = net.EventCollectIdList?.ToList() ?? []
+        };
+    }
+}
+
+public class GachaPaybackData
+{
+    public int GachaId { get; set; } = 0;
+    public int GachaCount { get; set; } = 0;
+    public List<int> RewardedStepList { get; set; } = [];
+}
+
+public class CharacterWishlistData
+{
+    public int BannerId { get; set; } = 0;
+    public int CharacterId { get; set; } = 0;
+}
+
 public class LoginEventData
 {
     public List<int> Days { get; set; } = [];
@@ -96,6 +139,7 @@ public class EventMissionData
     public List<int> DailyMissionIdList { get; set; } = [];
     public int LastDay { get; set; } = 0; // yyyyMMdd
     public long LastDate { get; set; } = 0; // Default value for LastDate
+    public bool AllClear { get; set; } = false;// activity event has been completed
 }
 // EventShopBuyCountData
 public class EventShopProductData
@@ -108,6 +152,15 @@ public class EventShopBuyCountData
 {
     public int EventId { get; set; } = 0;
     public List<EventShopProductData> datas { get; set; } = [];
+}
+
+public class NormalShopState
+{
+    public int RenewCount { get; set; }
+    public long RenewAt { get; set; }
+    public long NextRenewAt { get; set; }
+    public Dictionary<int, int> ProductIdsByOrder { get; set; } = [];
+    public Dictionary<int, int> BuyCountsByOrder { get; set; } = [];
 }
 
 public class SynchroSlot
@@ -128,7 +181,6 @@ public class SynchroSlot
 public class RecycleRoomResearchProgress
 {
     public int Level { get; set; } = 1;
-    public int Exp { get; set; }
     public int Attack { get; set; }
     public int Defense { get; set; }
     public int Hp { get; set; }
@@ -226,6 +278,7 @@ public class ResetableData
     public SimRoomData SimRoomData { get; set; } = new();
     public Dictionary<int, int> TowerCount { get; set; } = [];
     public Dictionary<int, int> DailyCounselCount { get; set; } = [];
+    public int DispatchCount { get; set; } = 0;
 
 }
 public class WeeklyResetableData
@@ -271,6 +324,7 @@ public class JukeBoxSetting
     public NetJukeboxLocation Location { get; set; }
     public NetJukeboxBgmType Type { get; set; }
     public int TableId { get; set; }
+    public bool IsShuffle { get; set; }
 }
 
 public class UnlockData
@@ -286,9 +340,20 @@ public class UnlockData
     }
 }
 
-public class MogMinigameInfo
+public class Nksv2Data
 {
     public List<string> CompletedScenarios { get; set; } = [];
+    public long Score { get; set; } = 0;
+    public Dictionary<int, MiniGameNKSV2MissionProgress> MissionProgressData { get; set; } = [];
+    public string ProgressJson { get; set; } = "";
+}
+public class MiniGameNKSV2MissionProgress
+{
+    public long Seq { get; set; }
+    public int NKsMissionId { get; set; }
+    public int Progress { get; set; }
+    public Timestamp CreatedAt { get; set; }   // 保留 Google.Protobuf.WellKnownTypes.Timestamp
+    public Timestamp ReceivedAt { get; set; }
 }
 public class BadgeModel
 {
@@ -526,17 +591,75 @@ public class GuildData
        
 }
 
+public class StellarBladeDatas
+{
+    public List< StellarBladeCurrency> Currency { get; set; } = [] ;
+    public StellarBladeCharacterData CharacterData { get; set; } = new();
+    public List<StellarBladeMissionData> MissionData { get; set; } =[];
+    public List<StellarBladeMissionData> DailyMissionData { get; set; } =[];
+    public List<StellarBladeMissionData> DailyPointMissionData { get; set; } = [];    
+    public Dictionary<int, StatisticsData> StatisticsData { get; set; } = [];
+    public Dictionary<int, SBStageDatas> BestStageDatas { get; set; } = [];
+    public List<int> TutorialList { get; set; } = [];
+    public int LastEnteredStageId { get; set; }
+    public List<int> SbItemIdList { get; set; } = [];
+    public int DailyPoint { get; set; } = 0;
+    public int Today { get; set; }
+}
 
+public class StellarBladeCurrency
+{
+    public int CurrencyType { get; set; }
+    public int Amount { get; set; }
+}
+public class StellarBladeCharacterData
+{
+    public int DefaultAttackSkillId { get; set; }
+    public List<int> LearnedSkillIdList { get; set; } = [];
+    public int Gear1SbItemId { get; set; }
+    public int Gear2SbItemId { get; set; }
+    public int ExoSpineSbItemId { get; set; }
+    public List<NetEnhanceData> EnhanceDataList { get; set; } = [];
+    public class NetEnhanceData
+    {
+        public int EnhanceType { get; set; }
+        public int EnhanceLevel { get; set; }
+    }
+}
+public class StellarBladeMissionData
+{
+    public int MissionId { get; set; }
+    public int Progress { get; set; }
+    public bool IsReceived { get; set; }
+}
+public class StatisticsData
+{
+    public int StageId { get; set; }
+    public Duration MinDuration { get; set; }  // Google.Protobuf.WellKnownTypes.Duration
+    public int TotalKillCount { get; set; }
+    public long TotalDamageTaken { get; set; }
+    public int TotalPerfectGuardCount { get; set; }
+    public int TotalPerfectDodgeCount { get; set; }
+    public int TotalPotionUsedCount { get; set; }
+}
+public class SBStageDatas
+{
+    public int BestDealtDamage { get; set; }
+    public int BestScore { get; set; }
+    public Duration BestDuration { get; set; }
+
+}
 
 
 public class TtsDatas
 {
-    public Dictionary<MiniGameTtsDifficulty,Dictionary<int, NetMiniGameTtsBadgeData>> BadgeData { get; set; } = [];
-    public Dictionary<int,NetMiniGameTtsMissionData> MissionData { get; set; } =[];
-    public List<NetMiniGameTtsScoreData> ScoreData { get; set; } = [];
-    public List<NetMiniGameTtsSongPlayCount> SongPlayCount { get; set; } = [];
-    public List<NetMiniGameTtsSongPlayData> SongPlayData { get; set; } = [];
-
+    public Dictionary<MiniGameTtsDifficulty,Dictionary<int, MiniGameTtsBadgeData>> BadgeData { get; set; } = [];
+    public Dictionary<int, MiniGameTtsMissionData> MissionData { get; set; } = [];
+    public List<MiniGameTtsScoreData> ScoreData { get; set; } = [];
+    public List<MiniGameTtsSongPlayCount> SongPlayCount { get; set; } = [];
+    public List<MiniGameTtsSongPlayData> SongPlayData { get; set; } = [];
+    public UserMiniGameTtsSkinData SkinData { get; set; } = new();
+    public List<int> BuySkinObject { get; set; } = [];
 
     public List<int> MissionCompleteList { get; set; } = [];
 
@@ -570,7 +693,55 @@ public class TtsDatas
     public Timestamp DateFromShop { get; set; } = new();
 }
 
+public class MiniGameTtsBadgeData
+{
+    public bool HasEntered { get; set; }
+    public bool HasReceivableReward { get; set; }
+    public bool HasNewSongBadge { get; set; }
+}
 
+public class MiniGameTtsMissionData
+{
+    public int MissionId { get; set; }
+    public int Progress { get; set; }
+    public bool IsReceived { get; set; }
+}
+public class MiniGameTtsScoreData
+{
+    public int EventTtsSongManagerTableId { get; set; }
+    public MiniGameTtsDifficulty Difficulty { get; set; }
+    public int Score { get; set; }
+}
+public class MiniGameTtsSongPlayCount
+{
+    public int EventTtsSongManagerTableId { get; set; }
+    public MiniGameTtsDifficulty Difficulty { get; set; }
+    public int PlayCount { get; set; }
+}
+public class MiniGameTtsSongPlayData
+{
+    public int EventTtsSongManagerTableId { get; set; }
+    public MiniGameTtsDifficulty Difficulty { get; set; }
+    public MiniGameTtsRank Rank { get; set; }
+    public int Score { get; set; }
+    public int MissCount { get; set; }
+    public int GoodCount { get; set; }
+    public int GreatCount { get; set; }
+    public int PerfectCount { get; set; }
+    public int PerfectPlusCount { get; set; }
+    public int ComboCount { get; set; }
+    public bool IsCleared { get; set; }
+    public bool IsFullCombo { get; set; }
+    public bool IsAllPerfect { get; set; }
+}
+public class UserMiniGameTtsSkinData
+{
+    public int BackgroundSkinObjectId { get; set; }
+    public int FirstCharacterSkinObjectId { get; set; }
+    public int SecondCharacterSkinObjectId { get; set; }
+    public int ThirdCharacterSkinObjectId { get; set; }
+    public int NoteSkinObjectId { get; set; }
+}
 
 public class SongRankKey
 {
@@ -580,6 +751,147 @@ public class SongRankKey
 }
 
 
+public class TowerDefenseData
+{
+    public int ChallengeMaxScore { get; set; } = 0;
+    public List<int> ClearedStageIdList { get; set; } = [];
+    public List<int> ClearedTutorialIdList { get; set; } = [];
+    public List<ArcadeTowerDefenseMissionProgress> MissionProgressList { get; set; } = [];
+    public int UpgradeCurrency { get; set; } = 0;
+    public List<int> UpgradeIdList { get; set; } = [];
+    public int LastEnteredStageId { get; set; } = 0;
+}
+
+public class ArcadeTowerDefenseMissionProgress
+{
+    public long MissionUid { get; set; }
+    public int MissionTid { get; set; }
+    public int Progress { get; set; }
+    public Timestamp CreatedAt { get; set; }
+    public Timestamp ReceivedAt { get; set; }
+}
+public class ArcadeBBQData
+{
+    public int ArcadeId { get; set; }
+    public int HighScore { get; set; }
+    public long TotalAccumulatedScore { get; set; }
+    public List<int> StepUpRewardedList { get; set; } = [];
+    public List<int> RecordedCutSceneList { get; set; } = [];
+    public int PlayCount { get; set; }
+}
+public class ArcadeDessertRushData
+{
+    public int ArcadeId { get; set; }
+    public int HighScore { get; set; }
+    public long TotalAccumulatedScore { get; set; }
+    public List<int> StepUpRewardedList { get; set; } = [];
+}
+public class ArcadePirateCafeData
+{
+    public int ArcadeId { get; set; }
+    public int HighScore { get; set; }
+    public long TotalAccumulatedScore { get; set; }
+    public List<int> MissionRewardedList { get; set; } = [];
+    public int SkillLevel { get; set; }
+}
+public class ArcadeSortOutData
+{
+    public List<BoxSortOutCount> AccumulatedBoxSortOutCounts { get; set; } = [];
+    public int HighScore { get; set; } = 0;
+    public List<int> MissionRewarded { get; set;  } = [];
+    public int TotalAccumulatedScore { get; set; } = 0;    
+}
+
+public class BoxSortOutCount
+{
+    public int BoxId { get; set; }
+    public int Count { get; set; }
+}
+public class ArcadeBtgData
+{
+    public BtgData Data { get; set; } = new();
+    public Dictionary<int, MiniGameBtgMissionData> MissionDatas { get; set; } = [];
+    public int Score { get; set; } = 0;
+
+}
+
+public class BtgData
+{
+    public int BtgId { get; set; }
+    public int TutorialState { get; set; }
+    public int TotalAccumulatedScore { get; set; }
+    public List<int> CutSceneList { get; set; } = [];
+    public List<int> WallpaperList { get; set; } = [];
+}
+
+public class MiniGameBtgMissionData
+{
+    public int MissionId { get; set; }
+    public int Progress { get; set; }
+    public bool IsReceived { get; set; }
+}
+
+public class DragonDungeonRunData
+{
+    public bool HasUnconfirmedAlbum { get; set; } = false;
+    public bool HasWatchedTutorial { get; set; } = false;
+    public bool NewScenarioAvailable { get; set; } = false;
+    public int TotalDistance { get; set; } = 0;
+    public int TotalGold { get; set; } = 0;
+    public int Point { get; set; } = 0;
+    public int TotalSkillCount { get; set; } = 0;
+    public int Distance { get; set; } = 0;    
+    public List<int> Characters { get; set; } = [];
+    public int LastPlayCharacter { get; set; } = 0;
+    public List<int> NewCharacters { get; set; } = [];
+    public bool IsPhase1Unlocked { get; set; } = false;
+    public bool IsPhase2Unlocked { get; set; } = false;
+    public Dictionary<int, DragonDungeonRunMissionProgress> MissionDatas { get; set; } = [];
+    public List<int> RewardedMissionIdList { get; set; } = [];
+    public SkipEarlyPhase Phase { get; set; } = SkipEarlyPhase.Phase0;
+    public Dictionary<int, bool> CutSceneList { get; set; } = [];
+    public Dictionary<int, DDRStatisticsData> StatisticsDatas { get; set; } = [];
+
+}
+
+public class DragonDungeonRunMissionProgress
+{
+    public int MissionType { get; set; }
+    public int MissionTargetId { get; set; }
+    public int Progress { get; set; }
+}
+public class DDRStatisticsData
+{    
+    public int Score { get; set; } = 0;
+    public int PlayCount { get; set; } = 0;
+    public int CumulativeDistance { get; set; } = 0;
+    public int CumulativeGold { get; set; } = 0;
+    public int CumulativeSkillCount { get; set; } = 0;
+    public Dictionary<int, int> DeadCountList { get; set; } = [];
+}
+
+public class RebuildEdenData
+{
+    public Dictionary<int, RebuildEdenMissionData> MissionDatas { get; set; } = [];
+    public Dictionary<int, int> DailyMissions { get; set; } = [];
+    public EdenData Data { get; set; } = new();
+    public Google.Protobuf.WellKnownTypes.Timestamp? FirstEnteredAt { get; set; }
+}
+
+public class EdenData
+{
+    public long ClientSeq { get; set; }
+    public string ProgressJson { get; set; } = "";
+    public Dictionary<int, int> Items { get; set; } = [];
+    public List<int> UnitIds { get; set; } = [];
+}
+
+public class RebuildEdenMissionData
+{
+    public int MissionId { get; set; }
+    public int Progress { get; set; }
+    public bool IsReceived { get; set; }
+}
 public class SongRankData
 {
     
@@ -606,4 +918,285 @@ public class SqlSongRankKey
     public int SongId { get; set; }
     public MiniGameTtsRankingType RankType { get; set; }
     public MiniGameTtsDifficulty Difficulty { get; set; }
+}
+public class MailAttachment
+{
+    public int Type { get; set; }   // RewardType
+    public int Id { get; set; }      // RewardId
+    public int Count { get; set; }   // RewardValue
+}
+
+public class ArcadeScoreRecord
+{
+    public int Id { get; set; }
+    public long GuildId { get; set; }
+    public ulong UserId { get; set; }
+    public long Score { get; set; }
+    public int ArcadeId { get; set; }
+    public int ModeId { get; set; }
+}
+
+public class BubbleMarchData
+{
+    public Dictionary<int, MiniGameBubbleMarchMissionData> AchievementMissionDataList { get; set; } = [];
+    public List<int> BuffUpgradeIdList { get; set; } = [];
+    public List<int> CharacterUpgradeIdList { get; set; } = [];
+    public List<int> ClearedStageIdList { get; set; } = [];
+    public List<int> ClearedTutorialIdList { get; set; } = [];
+    public bool LevelHideOptionActive { get; set; } = false;
+    public Dictionary<int,int> UpgradeCurrency { get; set; } = [];
+    public Dictionary<int, float> WaveProgress { get; set; } = [];
+
+}
+
+
+public class MiniGameBubbleMarchMissionData
+{
+    public int MissionId { get; set; }
+    public int Progress { get; set; }
+    public bool IsReceived { get; set; }
+}
+
+public class IsLandBreakerData
+{
+    public int IslandBreakerId { get; set; } = 0;
+    public MiniGameIslandBreakerDailyScore DailyScore { get; set; } = new();
+    public MiniGameIslandBreakerHighScore HighScore { get; set; } = new();
+    public long CumulativePlayScore { get; set; } = 0;
+    public long CumulativeSummonBallCount { get; set; } = 0;
+    public Dictionary<int, MiniGameIslandBreakerCharacterStatistics> CharacterStatistics { get; set; } = [];
+    public Dictionary<int, MiniGameIslandBreakerCurrency> Currencies { get; set; } = [];
+    public List<int> Buffs { get; set; } = [];
+    public Dictionary<int,MiniGameIslandBreakerMission> Missions { get; set; } = [];
+    public Dictionary<int, MiniGameIslandBreakerAlbum> Album { get; set; } = [];
+    public List<int> SeenImageIds { get; set; } = [];
+    public List<int> SeenCharacterIds { get; set; } = [];
+    public int LastSelectedCharacterId { get; set; }
+
+    public int ActiveDate { get; set; } = 0;
+
+    public ResGetMiniGameIslandBreaker ToNet()
+    {
+        var net = new ResGetMiniGameIslandBreaker
+        {
+            IslandBreakerId = this.IslandBreakerId,
+            CumulativePlayScore = this.CumulativePlayScore,
+            CumulativeSummonBallCount = this.CumulativeSummonBallCount,
+            LastSelectedCharacterId = this.LastSelectedCharacterId
+        };
+
+        if (this.DailyScore != null)
+        {
+            net.DailyScore = new NetMiniGameIslandBreakerDailyScore
+            {
+                Score = this.DailyScore.Score,
+                IsDailyRewarded = this.DailyScore.IsDailyRewarded
+            };
+        }
+
+        if (this.HighScore != null)
+        {
+            net.HighScore = new NetMiniGameIslandBreakerHighScore
+            {
+                HighScore = this.HighScore.HighScore,
+                HighWave = this.HighScore.HighWave
+            };
+        }
+
+        if (this.CharacterStatistics != null)
+        {
+            net.CharacterStatistics.AddRange(this.CharacterStatistics.Values.Select(cs => new NetMiniGameIslandBreakerCharacterStatistics
+            {
+                CharacterId = cs.CharacterId,
+                CumulativeScore = cs.CumulativeScore,
+                PlayCount = cs.PlayCount
+            }).ToList());
+        }
+
+        if (this.Currencies != null)
+        {
+            net.Currencies.AddRange( this.Currencies.Values.Select(c => new NetMiniGameIslandBreakerCurrency
+            {
+                CurrencyId = c.CurrencyId,
+                CurrentAmount = c.CurrentAmount,
+                Granted = c.Granted,
+                CumulativeAcquired = c.CumulativeAcquired,
+                MaxLimit = c.MaxLimit
+            }).ToList());
+        }
+
+        if (this.Buffs != null)
+        {
+            net.Buffs.AddRange( this.Buffs.ToList());
+        }
+
+        if (this.Missions != null)
+        {
+            net.Missions.AddRange( this.Missions.Select(m => new NetMiniGameIslandBreakerMission
+            {
+                MissionId = m.Key,
+                Progress = m.Value.Progress,
+                Rewarded = m.Value.Rewarded
+            }).ToList());
+        }
+
+        if (this.Album != null)
+        {
+            net.Album.AddRange( this.Album.Values.Select(a => new NetMiniGameIslandBreakerAlbum
+            {
+                ImageId = a.ImageId,
+                Unlocked = a.Unlocked
+            }).ToList());
+        }
+
+        if (this.SeenImageIds != null)
+        {
+            net.SeenImageIds.AddRange( this.SeenImageIds.ToList());
+        }
+
+        if (this.SeenCharacterIds != null)
+        {
+            net.SeenCharacterIds.AddRange( this.SeenCharacterIds.ToList());
+        }
+
+        return net;
+    }
+
+}
+
+public class MiniGameIslandBreakerDailyScore
+{
+    public long Score { get; set; } = 0;
+    public bool IsDailyRewarded { get; set; } = false;
+
+    public NetMiniGameIslandBreakerDailyScore ToNet()
+    {
+        return new NetMiniGameIslandBreakerDailyScore
+        {
+            Score = this.Score,
+            IsDailyRewarded = this.IsDailyRewarded
+        };
+    }
+}
+
+public class MiniGameIslandBreakerHighScore
+{
+    public long HighScore { get; set; } = 0;
+    public int HighWave { get; set; } = 0;
+
+    public NetMiniGameIslandBreakerHighScore ToNet()
+    {
+        return new NetMiniGameIslandBreakerHighScore
+        {
+            HighScore = this.HighScore,
+            HighWave = this.HighWave
+        };
+    }
+}
+
+public class MiniGameIslandBreakerCharacterStatistics
+{
+    public int CharacterId { get; set; } 
+    public long CumulativeScore { get; set; } 
+    public int PlayCount { get; set; }
+
+    public NetMiniGameIslandBreakerCharacterStatistics ToNet()
+    {
+        return new NetMiniGameIslandBreakerCharacterStatistics
+        {
+            CharacterId = this.CharacterId,
+            CumulativeScore = this.CumulativeScore,
+            PlayCount = this.PlayCount
+        };
+    }
+}
+
+public class MiniGameIslandBreakerCurrency
+{
+    public int CurrencyId { get; set; } 
+    public long CurrentAmount { get; set; }
+    public long Granted { get; set; } 
+    public long CumulativeAcquired { get; set; }
+    public long MaxLimit { get; set; }
+
+    public NetMiniGameIslandBreakerCurrency ToNet()
+    {
+        return new NetMiniGameIslandBreakerCurrency
+        {
+            CurrencyId = this.CurrencyId,
+            CurrentAmount = this.CurrentAmount,
+            Granted = this.Granted,
+            CumulativeAcquired = this.CumulativeAcquired,
+            MaxLimit = this.MaxLimit
+        };
+    }
+}
+
+public class MiniGameIslandBreakerMission
+{
+    public int MissionId { get; set; }
+    public long Progress { get; set; }
+    public bool Rewarded { get; set; }
+
+    public  NetMiniGameIslandBreakerMission ToNet()
+    {
+        return new NetMiniGameIslandBreakerMission
+        {
+            MissionId = this.MissionId,
+            Progress = this.Progress,
+            Rewarded = this.Rewarded
+        };
+    }
+}
+
+public class MiniGameIslandBreakerAlbum
+{
+    public int ImageId { get; set; } 
+    public bool Unlocked { get; set; }
+
+    public  NetMiniGameIslandBreakerAlbum ToNet()
+    {
+        return new NetMiniGameIslandBreakerAlbum
+        {
+            ImageId = this.ImageId,
+            Unlocked = this.Unlocked
+        };
+    }
+}
+
+public class SoloRaidMuseumStageData
+{
+    public int StageId { get; set; }
+    public SoloRaidMuseumStageMode StageMode { get; set; }
+    public bool IsNoLimitUnlocked { get; set; }
+    public SoloRaidMuseumModeData Challenge { get; set; } = new();
+    public SoloRaidMuseumModeData NoLimit { get; set; } = new();
+    public List<int> ReceivedChallengeMissions { get; set; } = [];
+    public List<int> ReceivedNoLimitMissions { get; set; } = [];
+    public List<NetTeamData> Teams { get; set; } = [];
+    // Local-server testing only. A value of 1 leaves client-reported damage unchanged.
+    public double DebugDamageMultiplier { get; set; } = 1;
+}
+
+public class SoloRaidMuseumModeData
+{
+    public int StageJoinCount { get; set; }
+    // TotalDamage/TotalStep describe the currently open run. Best values and
+    // Logs are only replaced after a complete five-team run finishes.
+    public long TotalDamage { get; set; }
+    public int TotalStep { get; set; }
+    public long BestDamage { get; set; }
+    public int BestStep { get; set; }
+    public bool IsInProgress { get; set; }
+    public List<int> OpenTeams { get; set; } = [];
+    public List<SoloRaidMuseumLogData> CurrentLogs { get; set; } = [];
+    public List<SoloRaidMuseumLogData> Logs { get; set; } = [];
+}
+
+public class SoloRaidMuseumLogData
+{
+    public long Damage { get; set; }
+    public int Step { get; set; }
+    public int TeamNumber { get; set; }
+    public List<TeamCharacterData> Team { get; set; } = [];
 }

@@ -14,7 +14,6 @@ public class MissionComplete : LobbyMessage
         User user = GetUser();
         ResCompleteMiniGameTtsMission response = new();
 
-        //Logging.WriteLine($"{req.EventTtsManagerTableId},{req.EventTtsMissionTableIdList}", LogType.Info);
         NetRewardData ret = new();
         if (user.TTSGameData.TryGetValue(req.EventTtsManagerTableId, out var ttsData))
         {
@@ -25,11 +24,7 @@ public class MissionComplete : LobbyMessage
                 EventTTSMissionRecord_Raw? mission = GameData.Instance.EventTTSMissionTable.Values
                 .Where(m => m.Id == item).FirstOrDefault();
 
-                if (!ttsData.MissionCompleteList.Contains(item))
-                {
-                    ttsData.MissionCompleteList.Add(item);
-                }
-                
+                user.AddUnique(ttsData.MissionCompleteList, item);
 
                 if (ttsData.MissionData.TryGetValue(item, out var miss))
                 {
@@ -41,12 +36,15 @@ public class MissionComplete : LobbyMessage
             ret = RewardUtils.RegisterRewardsForUserDou(user, rewardIds);
             response.RewardData = ret;
             response.Result = MiniGameTtsMissionCompleteResult.Success;
-            response.UpdatedMissionDataList.AddRange(ttsData.MissionData.Values.ToList());
+            var missionList = ttsData.MissionData.Values
+                .Select(m => MiniGameHelper.ToProto<NetMiniGameTtsMissionData, MiniGameTtsMissionData>(m))
+                .ToList();
+
+            response.UpdatedMissionDataList.AddRange(missionList);
             
         }
 
         JsonDb.Save();
-        // TODO
         await WriteDataAsync(response);
     }
 }

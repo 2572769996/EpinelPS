@@ -67,8 +67,18 @@ public class Present : LobbyMessage
         int beforeLv = bondInfo.Lv;
         int beforeExp = bondInfo.Exp;
 
-        bondInfo.Exp += totalExpGained;
-        UpdateAttractiveLevel(bondInfo);
+        if (bondInfo.Lv < user.GetMaxAttractiveLevel(req.NameCode))
+        {
+            bondInfo.Exp += totalExpGained;
+            UpdateAttractiveLevel(bondInfo);
+        }
+
+        // Outpost events can require a character's attractive level to be maxed
+        if (bondInfo.Lv >= user.GetMaxAttractiveLevel(req.NameCode) &&
+            !GameContext.Triggers.Any(t => t.UserId == user.ID && t.Type == Trigger.CharacterAttractiveLevelMax && t.ConditionId == req.NameCode))
+        {
+            user.AddTrigger(Trigger.CharacterAttractiveLevelMax, bondInfo.Lv, req.NameCode);
+        }
 
         response.Attractive = bondInfo;
         response.Exp = new NetIncreaseExpData
