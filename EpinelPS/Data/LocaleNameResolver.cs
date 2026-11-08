@@ -1,4 +1,4 @@
-using Microsoft.Data.Sqlite;
+﻿using Microsoft.Data.Sqlite;
 using EpinelPS.Utils;
 
 namespace EpinelPS.Data;
@@ -30,38 +30,37 @@ public static class LocaleNameResolver
             if (loaded) return;
             var roots = new[] { Path.Combine(AppContext.BaseDirectory, "cache", "local-locale") }.Where(Directory.Exists);
             foreach (var root in roots)
-            foreach (var file in Directory.EnumerateFiles(root, "Locale_*.lsc", SearchOption.TopDirectoryOnly))
-            {
-                try
+                foreach (var file in Directory.EnumerateFiles(root, "Locale_*.lsc", SearchOption.TopDirectoryOnly))
                 {
-                    var bytes = File.ReadAllBytes(file);
-                    var sqlite = NkdbDecryptor.Decrypt(bytes);
-                    var temp = Path.Combine(Path.GetTempPath(), $"epinelps-{Guid.NewGuid():N}.db");
                     try
                     {
-                        File.WriteAllBytes(temp, sqlite);
-                        using (var disk = new SqliteConnection($"Data Source={temp};Pooling=False"))
+                        var sqlite = File.ReadAllBytes(file);
+                        var temp = Path.Combine(Path.GetTempPath(), $"epinelps-{Guid.NewGuid():N}.db");
+                        try
                         {
-                            disk.Open();
-                            using var tableCommand = disk.CreateCommand();
-                            tableCommand.CommandText = "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' LIMIT 1";
-                            var name = tableCommand.ExecuteScalar() as string;
-                            if (string.IsNullOrEmpty(name)) continue;
-                            foreach (var lang in new[] { "zh-CN", "zh-TW", "en", "ja", "ko", "de", "th", "fr" })
+                            File.WriteAllBytes(temp, sqlite);
+                            using (var disk = new SqliteConnection($"Data Source={temp};Pooling=False"))
                             {
-                                var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-                                using var q = disk.CreateCommand();
-                                q.CommandText = $"SELECT Key, \"{lang}\" FROM [{name}]";
-                                using var reader = q.ExecuteReader();
-                                while (reader.Read()) if (!reader.IsDBNull(1)) map[reader.GetString(0)] = reader.GetString(1);
-                                Tables[name + "|" + lang] = map;
+                                disk.Open();
+                                using var tableCommand = disk.CreateCommand();
+                                tableCommand.CommandText = "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' LIMIT 1";
+                                var name = tableCommand.ExecuteScalar() as string;
+                                if (string.IsNullOrEmpty(name)) continue;
+                                foreach (var lang in new[] { "zh-CN", "zh-TW", "en", "ja", "ko", "de", "th", "fr" })
+                                {
+                                    var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                                    using var q = disk.CreateCommand();
+                                    q.CommandText = $"SELECT Key, \"{lang}\" FROM [{name}]";
+                                    using var reader = q.ExecuteReader();
+                                    while (reader.Read()) if (!reader.IsDBNull(1)) map[reader.GetString(0)] = reader.GetString(1);
+                                    Tables[name + "|" + lang] = map;
+                                }
                             }
                         }
+                        finally { if (File.Exists(temp)) File.Delete(temp); }
                     }
-                    finally { if (File.Exists(temp)) File.Delete(temp); }
+                    catch (Exception ex) { Console.Error.WriteLine($"Failed to load locale file {file}: {ex.Message}"); }
                 }
-                catch (Exception ex) { Console.Error.WriteLine($"Failed to load locale file {file}: {ex.Message}"); }
-            }
             loaded = true;
         }
     }

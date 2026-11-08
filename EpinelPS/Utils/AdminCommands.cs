@@ -1,10 +1,13 @@
 using EpinelPS.Data;
 using EpinelPS.Database;
 using EpinelPS.LobbyServer.Stage;
+using EpinelPS.LobbyServer.Tower;
 using EpinelPS.Models.Admin;
 using Google.Protobuf;
+using Microsoft.Data.Sqlite;
 using System.Net.Security;
 using System.Net.Sockets;
+using System.Text.Json;
 
 namespace EpinelPS.Utils;
 
@@ -66,7 +69,10 @@ public class AdminCommands
         int maxChapter = chapters.Max(c => c.Chapter);
 
         // Find max stage count for that chapter (main stages)
-        int maxStage = GameData.Instance.GetStageIdsForChapter(maxChapter, true).Count();
+        // GetStageIdsForChapter uses a zero-based chapter index, while the
+        // campaign table and admin command use the user-facing one-based
+        // chapter number.
+        int maxStage = GetNormalMainStages(maxChapter).Count;
 
         if (maxStage == 0) maxStage = 1;
 
@@ -76,83 +82,188 @@ public class AdminCommands
     public static RunCmdResponse CompleteStage(ulong userId, string input2)
     {
         User? user = JsonDb.Instance.Users.FirstOrDefault(x => x.ID == userId);
-        if (user == null) return new RunCmdResponse() { error = "invalId user ID" };
+        if (user == null) return new RunCmdResponse() { error = "invalid user ID" };
 
         try
         {
-            bool chapterParsed = int.TryParse(input2.Split('-')[0], out int chapterNumber);
-            bool stageParsed = int.TryParse(input2.Split('-')[1], out int stageNumber);
+            var parts = input2.Split(['-', ' ', '_', ','], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            if (parts.Length < 2)
+                return new RunCmdResponse() { error = "Please provide chapter and stage numbers (e.g. '2 1' or '2-1')" };
+
+            bool chapterParsed = int.TryParse(parts[0], out int chapterNumber);
+            bool stageParsed = int.TryParse(parts[1], out int stageNumber);
 
             if (chapterParsed && stageParsed)
             {
+                if (chapterNumber < 1 || stageNumber < 1)
+                    return new RunCmdResponse() { error = "Chapter and stage number must be positive integers" };
+
                 Console.WriteLine($"Chapter number: {chapterNumber}, Stage number: {stageNumber}");
 
-                // Complete main stages
-                for (int i = 0; i <= chapterNumber; i++)
+                // Ensure starter characters exist
+                ClearStage.EnsureDefaultCharacters(user);
+
+                // Ensure prologue stages (chapter 0: 6000001..6000003) are completed
+                var prologueStages = GameData.Instance.GetStageIdsForChapter(0, true)
+                    .Select(stageId => GameData.Instance.GetStageData(stageId)!)
+                    .OrderBy(stage => stage.Id);
+                foreach (CampaignStageRecord stageData in prologueStages)
                 {
-                    IEnumerable<int> stages = GameData.Instance.GetStageIdsForChapter(i, true);
-                    int target = 1;
-                    foreach (int item in stages)
+                    if (!user.IsStageCompleted(stageData.Id))
                     {
-                        CampaignStageRecord stageData = GameData.Instance.GetStageData(item) ?? throw new Exception("failed to find stage " + item);
-                        if (!user.IsStageCompleted(item) && stageData.ChapterMod == ChapterMod.Normal)
-                        {
-                            Console.WriteLine("Completing stage " + item);
-                            ClearStage.CompleteStage(user, item, true);
-                        }
-
-                        if (i == chapterNumber && target == stageNumber)
-                        {
-                            break;
-                        }
-
-                        target++;
+                        ClearStage.CompleteStage(user, stageData.Id, true, recordMainQuest: false);
                     }
                 }
 
-                // Process scenario and regular stages
-                Console.WriteLine($"Processing stages for chapters 0 to {chapterNumber}");
-
-                for (int chapter = 0; chapter <= chapterNumber; chapter++)
+                // Complete main stages up to target chapter and stage
+                int lastClearedStageId = user.LastNormalStageCleared;
+                for (int campaignChapter = 1; campaignChapter <= chapterNumber; campaignChapter++)
                 {
-                    Console.WriteLine($"Processing chapter: {chapter}");
+                    List<CampaignStageRecord> stages = GetNormalMainStages(campaignChapter);
+                    int stageLimit = campaignChapter == chapterNumber ? stageNumber : stages.Count;
 
-                    List<string> stages = [.. GameData.Instance.GetScenarioStageIdsForChapter(chapter).Where(stageId => GameData.Instance.IsValIdScenarioStage(stageId, chapterNumber, stageNumber))];
+                    if (stageLimit > stages.Count)
+                    {
+                        return new RunCmdResponse()
+                        {
+                            error = $"Chapter {campaignChapter} has only {stages.Count} normal main stages"
+                        };
+                    }
 
-                    Console.WriteLine($"Found {stages.Count} stages for chapter {chapter}");
+                    foreach (CampaignStageRecord stageData in stages.Take(stageLimit))
+                    {
+                        if (!user.IsStageCompleted(stageData.Id))
+                        {
+                            Console.WriteLine("Completing stage " + stageData.Id);
+                            ClearStage.CompleteStage(user, stageData.Id, true, recordMainQuest: false);
+                        }
+                        lastClearedStageId = stageData.Id;
+                    }
+                }
+
+                // Process scenario stages up to target chapter and stage
+                for (int chapter = 1; chapter <= chapterNumber; chapter++)
+                {
+                    List<string> stages = [.. GameData.Instance.GetScenarioStageIdsForChapter(chapter)
+                        .Where(stageId => GameData.Instance.IsValIdScenarioStage(stageId, chapterNumber, stageNumber))];
 
                     foreach (string? stage in stages)
                     {
                         if (!user.CompletedScenarios.Contains(stage))
                         {
                             user.CompletedScenarios.Add(stage);
-                            Console.WriteLine($"Added stage {stage} to CompletedScenarios");
-                        }
-                        else
-                        {
-                            Console.WriteLine($"Stage {stage} is already completed");
                         }
                     }
                 }
 
-                // get last quest data to remove any gaps
-                if (user.MainQuestData.Count >= 2)
+                // Ensure prologue map is initialized
+                string prologueMapId = GameData.Instance.GetMapIdFromChapter(1, ChapterMod.Normal);
+                if (!user.FieldInfoNew.ContainsKey(prologueMapId))
                 {
-                    KeyValuePair<int, bool> last = user.MainQuestData.Last();
-                    Logging.WriteLine("last quest Id: " + last.Key, LogType.Debug);
-                    for (int i = 0; i < last.Key; i++)
+                    user.FieldInfoNew.Add(prologueMapId, new FieldInfoNew());
+                }
+
+                // Ensure the field map for each chapter up to target is initialized
+                // Note: In ChapterCampaignData, Prologue is chapter=0 (Id=1), Chapter 1 is chapter=1 (Id=2), Chapter 2 is chapter=2 (Id=3).
+                // GetMapIdFromChapter(chapter) expects ChapterId (1-based: 1 for Prologue, 2 for Chapter 1, 3 for Chapter 2).
+                for (int c = 1; c <= chapterNumber; c++)
+                {
+                    string mapId = GameData.Instance.GetMapIdFromChapter(c + 1, ChapterMod.Normal);
+                    if (!user.FieldInfoNew.ContainsKey(mapId))
                     {
-                        if (GameData.Instance.QuestDataRecords.ContainsKey(i))
-                            user.MainQuestData.TryAdd(i, false);
+                        user.FieldInfoNew.Add(mapId, new FieldInfoNew());
+                    }
+                    // Invalidate stale local map json so the client fetches a fresh field state
+                    user.MapJson.Remove(mapId);
+                }
+
+                user.LastNormalStageCleared = lastClearedStageId;
+
+                // Sync main quest progression along the quest chain up to the last cleared stage
+                List<int> validQuests = ClearStage.GetCompletedQuestsForStage(lastClearedStageId);
+                HashSet<int> validQuestSet = [.. validQuests];
+
+                // Prune any quests that were beyond this stage (cleans up any previous corruption)
+                List<int> invalidQuests = user.MainQuestData.Keys.Where(k => !validQuestSet.Contains(k)).ToList();
+                foreach (int badKey in invalidQuests)
+                {
+                    user.MainQuestData.Remove(badKey);
+                }
+
+                // Clean up any stale MainQuestClear triggers in database
+                using (GameContext context = GameContext.CreateNew())
+                {
+                    var badTriggers = context.Triggers
+                        .Where(t => t.UserId == user.ID && t.Type == Trigger.MainQuestClear && t.ConditionId <= 9999 && !validQuestSet.Contains(t.ConditionId))
+                        .ToList();
+                    if (badTriggers.Count > 0)
+                    {
+                        context.Triggers.RemoveRange(badTriggers);
+                        context.SaveChanges();
                     }
                 }
+
+                HashSet<(Trigger Type, int ConditionId)> existingTriggers;
+                using (GameContext context = GameContext.CreateNew())
+                {
+                    existingTriggers = context.Triggers
+                        .Where(trigger => trigger.UserId == user.ID)
+                        .AsEnumerable()
+                        .Select(trigger => (trigger.Type, trigger.ConditionId))
+                        .ToHashSet();
+                }
+
+                int completedQuestTriggers = 0;
+                foreach (int questId in validQuests)
+                {
+                    user.MainQuestData.TryAdd(questId, false);
+
+                    if (GameData.Instance.QuestDataRecords.TryGetValue(questId, out MainQuestRecord? quest))
+                    {
+                        if (quest.ConditionId != null && quest.ConditionId.Count > 0)
+                        {
+                            int campaignConditionId = quest.ConditionId[0].ConditionId;
+                            if (campaignConditionId != 0 && existingTriggers.Add((Trigger.CampaignClear, campaignConditionId)))
+                            {
+                                user.AddTrigger(Trigger.CampaignClear, 1, campaignConditionId);
+                            }
+                        }
+                    }
+
+                    if (existingTriggers.Add((Trigger.MainQuestClear, questId)))
+                    {
+                        user.AddTrigger(Trigger.MainQuestClear, 1, questId);
+                        completedQuestTriggers++;
+                    }
+                }
+
+                // Reconcile ChapterClear triggers for all completed normal chapters up to target progression
+                int completedChapterTriggers = 0;
+                for (int c = 1; c <= chapterNumber; c++)
+                {
+                    List<CampaignStageRecord> chapterStages = GetNormalMainStages(c);
+                    CampaignStageRecord? bossStage = chapterStages.LastOrDefault();
+                    if (bossStage != null && user.IsStageCompleted(bossStage.Id))
+                    {
+                        if (existingTriggers.Add((Trigger.ChapterClear, bossStage.ChapterId)))
+                        {
+                            user.AddTrigger(Trigger.ChapterClear, 1, bossStage.ChapterId);
+                            completedChapterTriggers++;
+                        }
+                    }
+                }
+
+                // Reconcile eligible Messenger openers
+                MessengerMessageCreator.CreateAllEligibleOpeners(user);
+                Logging.WriteLine($"[Admin] CompleteStage recorded {completedQuestTriggers} MainQuestClear and {completedChapterTriggers} ChapterClear triggers for user {user.ID} up to stage {lastClearedStageId}", LogType.Info);
 
                 // Save changes to user data
                 JsonDb.Save();
+
             }
             else
             {
-                return new RunCmdResponse() { error = "Chapter and stage number must be valId integers" };
+                return new RunCmdResponse() { error = "Chapter and stage number must be valid integers" };
             }
         }
         catch (Exception ex)
@@ -160,6 +271,138 @@ public class AdminCommands
             return new RunCmdResponse() { error = "Exception: " + ex.ToString() };
         }
 
+        return RunCmdResponse.OK;
+    }
+
+    public static RunCmdResponse CompleteAllEventStages(ulong userId)
+    {
+        User? user = JsonDb.Instance.Users.FirstOrDefault(x => x.ID == userId);
+        if (user == null) return new RunCmdResponse() { error = "invalId user ID" };
+
+        int completedCount = 0;
+
+        // Collect all triggers first, then batch-add to avoid DbContext threading issues
+        var triggersToAdd = new List<(Trigger type, int value, int conditionId)>();
+
+        // Build stageId -> eventId mapping via EventDungeonStageTable -> EventDungeonDifficultTable -> EventDungeonTable
+        var stageToEvent = new Dictionary<int, int>();
+        var eventStages = new Dictionary<int, List<int>>();
+
+        foreach (var stageKv in GameData.Instance.EventDungeonStageTable)
+        {
+            int stageId = stageKv.Key;
+            int stageGroup = stageKv.Value.Group;
+
+            // Find the difficult record that matches this stage's group
+            var difficult = GameData.Instance.EventDungeonDifficultTable.Values.FirstOrDefault(x => x.StageGroup == stageGroup);
+            if (difficult == null) continue;
+
+            // Find the event that matches this difficult's group
+            var dungeon = GameData.Instance.EventDungeonTable.Values.FirstOrDefault(x => x.DifficultGroup == difficult.Group);
+            if (dungeon == null) continue;
+
+            int eventId = dungeon.Id;
+            stageToEvent[stageId] = eventId;
+
+            if (!eventStages.ContainsKey(eventId))
+                eventStages[eventId] = new List<int>();
+            eventStages[eventId].Add(stageId);
+
+            triggersToAdd.Add((Trigger.EventStageClear, 1, stageId));
+            completedCount++;
+        }
+
+        // Also trigger EventDungeonStageClear for all events and populate EventInfo
+        foreach (var eventKv in GameData.Instance.EventDungeonTable)
+        {
+            int eventId = eventKv.Value.Id;
+            triggersToAdd.Add((Trigger.EventDungeonStageClear, 1, eventId));
+
+            // Populate EventInfo with all stage IDs cleared
+            if (user.EventInfo.ContainsKey(eventId))
+            {
+                var eventData = user.EventInfo[eventId];
+                if (eventStages.ContainsKey(eventId))
+                {
+                    foreach (var stageId in eventStages[eventId])
+                    {
+                        if (!eventData.ClearedStages.Contains(stageId))
+                            eventData.ClearedStages.Add(stageId);
+                    }
+                    eventData.LastStage = eventStages[eventId].Max();
+                }
+            }
+            else
+            {
+                var clearedStages = eventStages.ContainsKey(eventId) ? eventStages[eventId].ToList() : new List<int>();
+                user.EventInfo.Add(eventId, new EventData()
+                {
+                    LastStage = clearedStages.Any() ? clearedStages.Max() : 0,
+                    ClearedStages = clearedStages
+                });
+            }
+        }
+
+        // Batch-add triggers
+        foreach (var (type, value, conditionId) in triggersToAdd)
+        {
+            user.AddTrigger(type, value, conditionId);
+        }
+
+        Console.WriteLine($"Completed {completedCount} event stages for user {userId}");
+        JsonDb.Save();
+        return RunCmdResponse.OK;
+    }
+
+    public static List<CampaignStageRecord> GetNormalMainStages(int campaignChapter)
+    {
+        // GetStageIdsForChapter matches (data.ChapterId - 1 == campaignChapter).
+        // For campaignChapter = 1, data.ChapterId = 2 (Chapter 1 stages 6001001..6001004).
+        // For campaignChapter = 2, data.ChapterId = 3 (Chapter 2 stages 6002001..6002016).
+        return [.. GameData.Instance.GetStageIdsForChapter(campaignChapter, true)
+            .Select(stageId => GameData.Instance.GetStageData(stageId)
+                ?? throw new Exception("failed to find stage " + stageId))
+            .OrderBy(stage => stage.Id)];
+    }
+
+
+    /// <summary>
+    /// Cheat: enroll every subquest and create its starting Messenger opener.
+    /// This intentionally bypasses normal prerequisites and trigger checks,
+    /// but preserves an already completed SubQuestData entry.
+    /// </summary>
+    public static RunCmdResponse UnlockAllSubquestMessages(ulong userId)
+    {
+        User? user = JsonDb.Instance.Users.FirstOrDefault(x => x.ID == userId);
+        if (user == null) return new RunCmdResponse() { error = "invalId user ID" };
+
+        int enrolledCount = 0;
+        int createdCount = 0;
+        foreach (SubQuestRecord subQuest in GameData.Instance.Subquests.Values)
+        {
+            if (!user.SubQuestData.ContainsKey(subQuest.Id))
+            {
+                user.SetSubQuest(subQuest.Id, false);
+                enrolledCount++;
+            }
+
+            if (string.IsNullOrEmpty(subQuest.ConversationId))
+                continue;
+
+            MessengerDialogRecord? opener = GameData.Instance.Messages.Values.FirstOrDefault(message =>
+                message.ConversationId == subQuest.ConversationId && message.IsOpener);
+            if (opener == null)
+                continue;
+
+            if (user.MessengerData.Any(message => message.ConversationId == opener.ConversationId))
+                continue;
+
+            user.CreateMessage(opener);
+            createdCount++;
+        }
+
+        Logging.WriteLine($"[Admin] UnlockAllSubquestMessages user={user.ID}, Enrolled={enrolledCount}, Created={createdCount}", LogType.Warning);
+        JsonDb.Save();
         return RunCmdResponse.OK;
     }
 
@@ -189,8 +432,14 @@ public class AdminCommands
                 user.BondInfo.Add(new() { NameCode = character.NameCode, Lv = 1 });
                 user.AddTrigger(Trigger.ObtainCharacter, 1, character.NameCode);
                 user.AddTrigger(Trigger.ObtainCharacterNew, 1, 0);
+                if (character.OriginalRare == OriginalRareType.SSR)
+                    user.AddTrigger(Trigger.ObtainCharacterSSR, 1);
             }
         }
+
+        // A character can unlock a Messenger room even when the conversation
+        // itself is gated by an already-completed campaign/event trigger.
+        MessengerMessageCreator.CreateAllEligibleOpeners(user);
 
         JsonDb.Save();
 
@@ -551,6 +800,17 @@ public class AdminCommands
                 UltimateLevel = 1
             });
 
+            if (GameData.Instance.CharacterTable.TryGetValue(characterId, out CharacterRecord? charData))
+            {
+                user.BondInfo.Add(new() { NameCode = charData.NameCode, Lv = 1 });
+                user.AddTrigger(Trigger.ObtainCharacter, 1, charData.NameCode);
+                user.AddTrigger(Trigger.ObtainCharacterNew, 1);
+                if (charData.OriginalRare == OriginalRareType.SSR)
+                    user.AddTrigger(Trigger.ObtainCharacterSSR, 1);
+            }
+
+            MessengerMessageCreator.CreateAllEligibleOpeners(user);
+
             Console.WriteLine($"Added character {characterId} to user");
             JsonDb.Save();
             return RunCmdResponse.OK;
@@ -633,6 +893,137 @@ public class AdminCommands
             return new RunCmdResponse { error = $"发送失败: {ex.Message}" };
         }
     }
+    
+    public static RunCmdResponse SkipTowerFloor(ulong userId, string args)
+    {
+        var user = JsonDb.Instance.Users.FirstOrDefault(x => x.ID == userId);
+
+        try
+        {
+            var towerParsed = Enum.TryParse(args.Split('-')[0], out CorporationTowerType tower);
+            var floorParsed = int.TryParse(args.Split('-')[1], out var floor);
+
+            if (towerParsed && floorParsed)
+            {
+                Console.WriteLine($"Tower: {tower}, Floor: {floor} | ALL means Tribe Tower");
+
+                var currentFloor = 0;
+                if (user?.TowerProgress != null && user.TowerProgress.TryGetValue(tower, out var savedProgress))
+                    currentFloor = savedProgress;
+
+                if (floor <= currentFloor)
+                    return new RunCmdResponse()
+                    {
+                        error = $"Invalid floor {floor} for tower {tower}. " +
+                                $"Last Cleared {tower} Tower floor is {currentFloor}. " +
+                                $"Input must be greater than {currentFloor}."
+                    };
+
+                var maxFloor = GameData.Instance.towerTable.Values
+                    .Where(x => x.Type == tower)
+                    .Select(x => x.Floor)
+                    .DefaultIfEmpty(0)
+                    .Max();
+
+                if (maxFloor == 0)
+                    return new RunCmdResponse() { error = $"No floors found for tower {tower}" };
+
+                if (floor > maxFloor)
+                    return new RunCmdResponse()
+                    {
+                        error = $"Invalid floor {floor} for tower {tower}. " +
+                                $"Max floor is {maxFloor}. " +
+                                $"Input must be between {currentFloor + 1} and {maxFloor}."
+                    };
+
+                if (currentFloor >= maxFloor)
+                    return new RunCmdResponse()
+                    {
+                        error = $"Tower {tower} already fully cleared " +
+                                $"(progress={currentFloor}, max={maxFloor})."
+                    };
+
+                var targetTower = GameData.Instance.towerTable.Values
+                    .FirstOrDefault(x => x.Type == tower && x.Floor == floor);
+
+                if (targetTower == null) return new RunCmdResponse() { error = $"Floor {floor} not found for tower {tower}" };
+
+                var reward = TowerHelper.SkipTowerFloors(user, targetTower.Id, out var triggers);
+
+                triggers.ForEach(trigger =>
+                {
+                    try
+                    {
+                        user.AddTrigger(trigger.Type, trigger.Value, trigger.ConditionId);
+                    }
+                    catch (ObjectDisposedException)
+                    {
+                        Console.WriteLine($"Warning: could not record trigger {trigger.Type} (conditionId {trigger.ConditionId}) - GameContext unavailable");
+                    }
+                });
+
+                Console.WriteLine("Tower Clear Reward: " + JsonSerializer.Serialize(reward));
+                JsonDb.Save();
+            }
+            else
+                return new RunCmdResponse() { error = "Tower and floor number must be valid integers" };
+        }
+        catch (Exception ex)
+        {
+            return new RunCmdResponse() { error = "Exception: " + ex.ToString() };
+        }
+        return RunCmdResponse.OK;
+    }
+
+    public static RunCmdResponse AddLocaleFiles(string path)
+    {
+        int filesAdded = 0;
+        path = path.Trim().Trim('"');
+        Console.WriteLine($"Checking provided path for required locale files\n{path}", LogType.Info);
+
+        if (!string.IsNullOrWhiteSpace(path) && Directory.Exists(path) && Directory.GetFiles(path).Length > 0)
+        {
+            foreach (var file in Directory.GetFiles(path))
+            {
+                string cs = $"Data Source={file};Mode=ReadWrite;";
+                try
+                {
+                    using SqliteConnection con = new (cs);
+                    con.Open();
+                    using SqliteCommand cmd = con.CreateCommand();
+                    cmd.CommandText = "PRAGMA integrity_check";
+                    string? result = cmd.ExecuteScalar() as string;
+                    cmd.CommandText = "SELECT name FROM sqlite_schema WHERE type='table' AND name LIKE '%Locale_%' AND name NOT LIKE 'sqlite_%' ORDER BY name;";
+                    result = cmd.ExecuteScalar() as string;
+                    if (!string.IsNullOrWhiteSpace(result))
+                    {
+                        if (!Directory.Exists(Path.Combine(AppContext.BaseDirectory, "cache", "local-locale")))
+                            Directory.CreateDirectory(Path.Combine(AppContext.BaseDirectory, "cache", "local-locale"));
+                        var dir = Path.Combine(AppContext.BaseDirectory, "cache", "local-locale");
+                        var newName = $"{result}.lsc";
+                        File.Copy(file, $"{dir}\\{newName}", true);
+                        Console.WriteLine($"{newName} added successfully!");
+                        filesAdded++;
+                    }
+                }
+                catch (SqliteException ex) when (ex.SqliteErrorCode == 26)
+                {
+                    Console.WriteLine($"{file}: not ok");
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"{file}: not ok");
+                }
+            }
+        }
+        else
+        {
+            return new RunCmdResponse() { error = "Not locale file(s) found in provided path" };
+        }
+        if (filesAdded < 1) return new RunCmdResponse() { error = "Not locale file(s) found in provided path" };
+        return RunCmdResponse.OK;
+    }
+
     internal static async Task<RunCmdResponse> UpdateResources()
     {
         Logging.WriteLine("updating static data and resource info...", LogType.Info);
@@ -664,9 +1055,6 @@ public class AdminCommands
         }
 
         GameConfig.Root.ResourceBaseURL = resources.BaseUrl;
-        if (resources.DataPackVersionMap.TryGetValue(GameConfig.Root.TargetVersion, out var dataPackVersion)
-            || resources.DataPackVersionMap.TryGetValue(resources.Version, out dataPackVersion))
-            GameConfig.Root.ResourceDataPackVersion = dataPackVersion;
         GameConfig.Root.StaticDataMpk.Salt1 = staticData2.Salt1.ToBase64();
         GameConfig.Root.StaticDataMpk.Salt2 = staticData2.Salt2.ToBase64();
         GameConfig.Root.StaticDataMpk.Version = staticData2.Version;
@@ -674,7 +1062,6 @@ public class AdminCommands
         GameConfig.Save();
 
         await GameData.CreateAsync();
-        await LocaleDataDownloader.DownloadAsync(CancellationToken.None);
 
         return RunCmdResponse.OK;
     }

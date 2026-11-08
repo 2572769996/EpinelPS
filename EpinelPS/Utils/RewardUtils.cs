@@ -492,17 +492,17 @@ public class RewardUtils
                     });
 
 
-                    //ret.UserItems.Add(NetUtils.UserItemDataToNet(spareItem));
-                    //ret.Character.Add(GetNetCharacterData(ownedCharacter));
+                    ret.UserItems.Add(NetUtils.UserItemDataToNet(spareItem));
+                    ret.Character.Add(GetNetCharacterData(ownedCharacter));
 
                     // Tell the client the new amount of this item
-                    ret.UserItems.Add(new NetUserItemData()
-                    {
-                        Isn = spareItem.Isn,
-                        Tid = spareItem.ItemType,
-                        Count = spareItem.Count,
-                        Corporation = spareItem.Corp
-                    });
+                    //ret.UserItems.Add(new NetUserItemData()
+                    //{
+                    //    Isn = spareItem.Isn,
+                    //    Tid = spareItem.ItemType,
+                    //    Count = spareItem.Count,
+                    //    Corporation = spareItem.Corp
+                    //});
                 }
                 else
                 {
@@ -511,7 +511,7 @@ public class RewardUtils
 
                     int bodyLabel = GetValueByRarity(character.OriginalRare, 150, 200, 6000);
 
-                    //Console.WriteLine($"[UseSelectBox] ��Ƭ����������ֻ�ܼ������ǩ: {bodyLabel} ��");
+                    Console.WriteLine($"Got: {bodyLabel} ��");
 
                     totalBodyLabels += bodyLabel * dissoluteCharacterCount;
                     ret.Character.Add(GetNetCharacterData(ownedCharacter, bodyLabel));
@@ -554,7 +554,7 @@ public class RewardUtils
                 // Add "New Character" Badge
                 user.AddBadge(BadgeContents.NikkeNew, character.NameCode.ToString());
                 user.AddTrigger(Trigger.ObtainCharacter, 1, character.NameCode);
-                if (character.OriginalRare == OriginalRareType.SR)
+                if (character.OriginalRare == OriginalRareType.SSR)
                 {
                     user.AddTrigger(Trigger.ObtainCharacterSSR, 1);
                 }

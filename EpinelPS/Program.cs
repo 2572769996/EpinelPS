@@ -5,6 +5,7 @@ using EpinelPS.LobbyServer;
 using EpinelPS.Networking;
 using EpinelPS.Services;
 using EpinelPS.Utils;
+using EpinelPS.LobbyServer.Stage;
 using log4net.Config;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.AspNetCore.Server.Kestrel.Https;
@@ -28,19 +29,31 @@ internal class Program
             Console.WriteLine("This software is licensed under the AGPL-3.0 License");
             Console.WriteLine("Targeting game version " + GameConfig.Root.TargetVersion);
             Console.WriteLine("Git commit " + GitUpdateCheck.GitCommit);
+            if (!File.Exists(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "gamecommon.json")))
+            {
+                Console.WriteLine("gamecommon.json does not exist, please go to our discord server for assistance");
+                return;
+            }
             
-            if (args.Length == 0 || args[0] != "--headless")
-                await GitUpdateCheck.CheckForUpdates();
-
-            await GameData.CreateAsync();
-
             try
             {
-                await LocaleDataDownloader.DownloadAsync(CancellationToken.None);
+                if (args.Length == 0 || args[0] != "--headless")
+                    await GitUpdateCheck.CheckForUpdates();
             }
-            catch (Exception ex)
+            catch(Exception ex)
             {
-                Logging.WriteLine($"Failed to update locale data: {ex.Message}", LogType.Warning);
+                Console.WriteLine("Failed to check for updates: " + ex.Message);
+            }
+
+            await GameData.CreateAsync();
+            foreach (var user in JsonDb.Instance.Users)
+            {
+                if (user.LastNormalStageCleared >= 6000002)
+                {
+                    ClearStage.EnsureDefaultCharacters(user);
+                }
+                ClearStage.ReconcileMainQuests(user, logToConsole: false);
+                MessengerMessageCreator.CreateAllEligibleOpeners(user, logToConsole: false);
             }
 
             Console.WriteLine("Initializing database");
@@ -81,8 +94,10 @@ internal class Program
             // Add services to the container.
             string connectionString = builder.Configuration.GetConnectionString("EpinelPSConnection").Replace("(startupDirectory)", AppDomain.CurrentDomain.BaseDirectory);
             string connectionType = builder.Configuration.GetConnectionString("EpinelPSConnectionType").ToLower();
+            GameContext.InitializeOptions(connectionString, connectionType);
             builder.Services.AddHttpContextAccessor();
             builder.Services.AddScoped<IUserService, UserService>();
+            builder.Services.AddSingleton<MessengerAdminService>();
             builder.Services.AddDbContext<GameContext>(options =>
             {
                 switch (connectionType?.ToLowerInvariant())
@@ -126,6 +141,14 @@ internal class Program
 
             WebApplication app = builder.Build();
             CreateDbIfNotExists(app);
+
+            // Keep a startup scope alive for legacy code paths that use
+            // GameContext.Instance (e.g. User.AddTrigger). GameContext is registered
+            // as scoped, so it cannot be resolved directly from the root provider.
+            // The scope is disposed automatically after app.Run() returns.
+            using IServiceScope gameContextScope = app.Services.CreateScope();
+            GameContext.SetInstance(gameContextScope.ServiceProvider.GetRequiredService<GameContext>());
+
             app.UseDefaultFiles();
             app.UseStaticFiles();
             app.UseMiddleware<EncryptionMiddleware>();
